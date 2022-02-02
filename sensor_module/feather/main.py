@@ -164,7 +164,7 @@ def main():
             machine.enable_irq(irq_state)
             os.dupterm(UART(0, UART_BAUD_RATE), 1)
 
-    def transmit_cb():
+    def transmit_cb(_timer):
         micropython.schedule(transmit_data, None)
 
     transmit_timer = Timer(-1)
