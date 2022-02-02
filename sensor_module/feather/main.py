@@ -2,12 +2,9 @@ import micropython
 
 micropython.alloc_emergency_exception_buf(100)
 
-import os
-
-os.dupterm(None, 1)
-
 import array
 import json
+import os
 import struct
 import time
 
@@ -146,7 +143,7 @@ def main():
     SENSOR_POLL_PERIOD_MS = 100
     TRANSMIT_PERIOD_MS = 1000
 
-    UART_BAUD_RATE = 9600
+    UART_BAUD_RATE = 115200
 
     i2c = I2C(scl=Pin(5), sda=Pin(4))
 
@@ -158,15 +155,17 @@ def main():
 
         try:
             irq_state = machine.disable_irq()
+            os.dupterm(None, 1)
 
             uart = UART(0, baudrate=UART_BAUD_RATE)
             uart.write(json.dumps(transmit_buffer))
             transmit_buffer.clear()
         finally:
             machine.enable_irq(irq_state)
+            os.dupterm(UART(0, UART_BAUD_RATE), 1)
 
     def transmit_cb():
-        micropython.schedule(transmit_buffer)
+        micropython.schedule(transmit_data)
 
     transmit_timer = Timer(-1)
     transmit_timer.init(period=TRANSMIT_PERIOD_MS, cb=transmit_cb)
