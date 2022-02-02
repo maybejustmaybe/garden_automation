@@ -149,7 +149,7 @@ def main():
 
     transmit_buffer = list()
 
-    def transmit_data():
+    def transmit_data(_arg):
         if len(transmit_buffer) == 0:
             return
 
@@ -165,7 +165,7 @@ def main():
             os.dupterm(UART(0, UART_BAUD_RATE), 1)
 
     def transmit_cb():
-        micropython.schedule(transmit_data)
+        micropython.schedule(transmit_data, None)
 
     transmit_timer = Timer(-1)
     transmit_timer.init(period=TRANSMIT_PERIOD_MS, callback=transmit_cb)
