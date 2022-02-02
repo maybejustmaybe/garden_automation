@@ -168,7 +168,7 @@ def main():
         micropython.schedule(transmit_data)
 
     transmit_timer = Timer(-1)
-    transmit_timer.init(period=TRANSMIT_PERIOD_MS, cb=transmit_cb)
+    transmit_timer.init(period=TRANSMIT_PERIOD_MS, callback=transmit_cb)
 
     def sht30_on_read(tick, last_tick, temp, humidity):
         transmit_buffer.append(
