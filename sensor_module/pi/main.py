@@ -2,7 +2,7 @@ from lib import pyboard
 from pathlib import Path
 
 FEATHER_DEVICE = "/dev/ttyUSB0"
-FEATHER_MAIN_PATH = Path("../../feather/main.py").resolve()
+FEATHER_MAIN_PATH = Path(__file__).resolve().parents[2] / "sensor_module" / "feather" / "main.py"
 
 def main():
     with open(FEATHER_MAIN_PATH, "r", encoding="utf-8") as f:
