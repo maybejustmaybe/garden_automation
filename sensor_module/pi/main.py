@@ -3,14 +3,16 @@ from lib import pyboard
 FEATHER_DEVICE = "/dev/ttyUSB0"
 
 def main():
-    feather = pyboard.Pyboard(FEATHER_DEVICE)
+    pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
+        print("REPL...")
+        pyb.enter_raw_repl()
         print("Testing...")
-        feather.exec("print('test')")
-        print("Reading...")
-        feather.read_until(1, "\n", data_consumer=print)
+        ret = pyb.exec('print(1+1)')
+        print(ret)
     finally:
-        feather.close()
+        pyb.exit_raw_repl()
+        pyb.close()
 
     print("done")
 
