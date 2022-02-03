@@ -1,3 +1,4 @@
+import sys
 import micropython
 
 micropython.alloc_emergency_exception_buf(100)
@@ -153,16 +154,8 @@ def main():
         if len(transmit_buffer) == 0:
             return
 
-        try:
-            irq_state = machine.disable_irq()
-            os.dupterm(None, 1)
-
-            uart = UART(0, baudrate=UART_BAUD_RATE)
-            uart.write(json.dumps(transmit_buffer))
-            transmit_buffer.clear()
-        finally:
-            machine.enable_irq(irq_state)
-            os.dupterm(UART(0, UART_BAUD_RATE), 1)
+        sys.stdout.write(json.dumps(transmit_buffer))
+        transmit_buffer.clear()
 
     def transmit_cb(_timer):
         micropython.schedule(transmit_data, None)
@@ -173,6 +166,7 @@ def main():
     def sht30_on_read(tick, last_tick, temp, humidity):
         transmit_buffer.append(
             {
+                "type": "reading",
                 "sensor": "sht30",
                 "tick_diff": tick - last_tick,
                 "temp": temp,
@@ -183,6 +177,7 @@ def main():
     def ahtx0_on_read(tick, last_tick, temp, humidity):
         transmit_buffer.append(
             {
+                "type": "reading",
                 "sensor": "ahtx0",
                 "tick_diff": tick - last_tick,
                 "temp": temp,
