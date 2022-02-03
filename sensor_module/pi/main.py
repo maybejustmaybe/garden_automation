@@ -1,4 +1,4 @@
-from .lib import pyboard, PyboardError
+from lib import pyboard, PyboardError
 from pathlib import Path
 
 FEATHER_DEVICE = "/dev/ttyUSB0"
