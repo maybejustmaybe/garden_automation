@@ -11,8 +11,19 @@ def main():
     with open(FEATHER_MAIN_PATH, "r", encoding="utf-8") as f:
         feather_main_contents = f.read()
 
+    output_chunks = list()
     def on_feather_output(raw):
-        print(raw)
+        chunk = raw.decode("utf-8", errors="replace")
+        split_chunks = chunk.split("\n")
+
+        if len(split_chunks) > 1:
+            print("".join([*output_chunks, split_chunks[0]]))
+            for line_chunk in split_chunks[1:-1]:
+                print(line_chunk)
+            output_chunks.append(split_chunks[-1])
+        else:
+            output_chunks.append(split_chunks)
+
 
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
