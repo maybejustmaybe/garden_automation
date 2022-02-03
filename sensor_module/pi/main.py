@@ -1,4 +1,4 @@
-from lib import pyboard, PyboardError
+from lib import pyboard
 from pathlib import Path
 
 FEATHER_DEVICE = "/dev/ttyUSB0"
@@ -20,7 +20,7 @@ def main():
         print("Removing and reputting feather libs...")
         try:
             pyb.fs_rmdir("/lib")
-        except PyboardError:
+        except pyboard.PyboardError:
             # NOTE that the lib dir was likely not present
             pass
 
