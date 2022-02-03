@@ -28,14 +28,11 @@ def main():
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
         pyb.enter_raw_repl()
-        print("Removing and reputting feather libs...")
-        try:
-            pyb.fs_rmdir("/lib")
-        except pyboard.PyboardError:
-            # NOTE that the lib dir was likely not present
-            pass
 
+        print("Removing and reputting feather libs...")
+        pyb.fs_rmdir("/lib")
         pyb.fs_mkdir("/lib")
+
         for lib_path in FEATHER_LIB_DIR_PATH.iterdir():
             assert lib_path.is_file()
             pyb.fs_put(lib_path, f"/lib/{lib_path.name}")
