@@ -47,6 +47,7 @@ else:
             assert lib_path.is_file()
             pyb.fs_put(lib_path, f"/lib/{lib_path.name}")
 
+        print("Exec-ing feather main program...")
         pyb.exec(feather_main_contents, data_consumer=on_feather_output)
     finally:
         pyb.exit_raw_repl()
