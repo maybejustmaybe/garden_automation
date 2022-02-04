@@ -33,11 +33,13 @@ def main():
         pyb.exec(
 """
 import os
-if os.exists("/lib"):
+try:
+    os.stat("/lib")
+except FileNotFoundError:
+    os.mkdir("/lib")
+else:
     for path in os.iterdir("/lib"):
         os.remove(path)
-else:
-    os.mkdir("/lib")
 """
         )
 
