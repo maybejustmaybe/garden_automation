@@ -30,8 +30,16 @@ def main():
         pyb.enter_raw_repl()
 
         print("Removing and reputting feather libs...")
-        pyb.fs_rmdir("/lib")
-        pyb.fs_mkdir("/lib")
+        pyb.exec(
+"""
+import os
+if os.exists("/lib"):
+    for path in os.iterdir("/lib"):
+        os.remove(path)
+else:
+    os.mkdir("/lib")
+"""
+        )
 
         for lib_path in FEATHER_LIB_DIR_PATH.iterdir():
             assert lib_path.is_file()
