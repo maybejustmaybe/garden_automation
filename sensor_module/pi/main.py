@@ -20,10 +20,10 @@ def main():
             print("".join([*output_chunks, split_chunks[0]]))
             for line_chunk in split_chunks[1:-1]:
                 print(line_chunk)
+            output_chunks.clear()
             output_chunks.append(split_chunks[-1])
         else:
-            output_chunks.append(split_chunks)
-
+            output_chunks.append(output_chunks)
 
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
