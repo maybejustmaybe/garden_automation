@@ -39,7 +39,7 @@ except FileNotFoundError:
     os.mkdir("/lib")
 else:
     for path in os.listdir("/lib"):
-        os.remove(path)
+        os.remove("/lib/{}".format(path))
 """
         )
 
