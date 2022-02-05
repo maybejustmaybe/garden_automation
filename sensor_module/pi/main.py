@@ -73,7 +73,7 @@ else:
         print("Exec-ing feather main program...")
         # TODO : remove
         # pyb.exec(feather_main_contents, data_consumer=on_feather_output)
-        pyb.exec("import time; print('fooooooo\nblahhhh'); time.sleep(1); print('testtesttest')", data_consumer=on_feather_output)
+        pyb.exec("print('fooooooo\nblahhhh'); print('testtesttest')", data_consumer=on_feather_output)
     finally:
         pyb.exit_raw_repl()
         pyb.close()
