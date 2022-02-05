@@ -155,6 +155,7 @@ def main():
             return
 
         sys.stdout.write(json.dumps(transmit_buffer))
+        sys.stdout.write("\n")
         transmit_buffer.clear()
 
     def transmit_cb(_timer):
