@@ -34,8 +34,6 @@ def main():
 
     output_chunks = list()
     def on_feather_output(raw):
-        print(raw)
-
         chunk = raw.decode("utf-8", errors="replace")
         split_chunks = chunk.split("\n")
 
@@ -48,7 +46,8 @@ def main():
         else:
             output_chunks.append(output_chunks)
 
-    reset_feather()
+    # TODO
+    # reset_feather()
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
         pyb.enter_raw_repl()
