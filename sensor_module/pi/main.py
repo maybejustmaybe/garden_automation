@@ -25,7 +25,7 @@ esptool = load_esptool_module()
 def reset_feather():
     print("Resetting feather...")
     esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)    
-    esp_loader.hard_reset()
+    esp_loader.soft_reset()
     print("Reset feather.")
 
 def main():
@@ -46,7 +46,8 @@ def main():
         else:
             output_chunks.append(split_chunks[0])
 
-    reset_feather()
+    # TODO : remove
+    # reset_feather()
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
         pyb.enter_raw_repl()
