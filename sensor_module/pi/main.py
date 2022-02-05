@@ -1,3 +1,5 @@
+import sys
+import importlib
 from lib import pyboard
 from pathlib import Path
 
@@ -7,12 +9,32 @@ FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
 FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
 FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 
+def load_esptool_module():
+    ESPTOOL_PATH = Path(sys.exec_prefix) / "bin" / "esptool.py"
+
+    esptool_spec = importlib.util.spec_from_file_location("esptool", str(ESPTOOL_PATH))
+    esptool = importlib.util.module_from_spec()
+    esptool_spec.loader.exec_module(esptool)
+
+    return esptool
+
+esptool = load_esptool_module()
+
+
+def reset_feather():
+    print("Resetting feather...")
+    esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)    
+    esp_loader.hard_reset()
+    print("Reset feather.")
+
 def main():
     with open(FEATHER_MAIN_PATH, "r", encoding="utf-8") as f:
         feather_main_contents = f.read()
 
     output_chunks = list()
     def on_feather_output(raw):
+        print(raw)
+
         chunk = raw.decode("utf-8", errors="replace")
         split_chunks = chunk.split("\n")
 
@@ -25,6 +47,7 @@ def main():
         else:
             output_chunks.append(output_chunks)
 
+    reset_feather()
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
         pyb.enter_raw_repl()
