@@ -50,8 +50,9 @@ def main():
     # reset_feather()
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
-        for _ in range(3):
+        for repl_attempt in range(1, 4):
             try:
+                print("Entering raw repl attempt: {}".format(repl_attempt))
                 pyb.enter_raw_repl()
             except pyboard.PyboardError:
                 pass
