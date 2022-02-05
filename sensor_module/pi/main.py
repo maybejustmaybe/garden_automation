@@ -44,7 +44,7 @@ def main():
             output_chunks.clear()
             output_chunks.append(split_chunks[-1])
         else:
-            output_chunks.append(output_chunks)
+            output_chunks.append(split_chunks[0])
 
     # TODO
     # reset_feather()
