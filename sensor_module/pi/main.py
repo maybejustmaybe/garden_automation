@@ -47,7 +47,7 @@ def main():
             output_chunks.append(split_chunks[0])
 
     # TODO : remove
-    reset_feather()
+    # reset_feather()
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
         pyb.enter_raw_repl()
