@@ -25,7 +25,7 @@ esptool = load_esptool_module()
 def reset_feather():
     print("Resetting feather...")
     esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)    
-    esp_loader.soft_reset()
+    esp_loader.soft_reset(False)
     print("Reset feather.")
 
 def main():
