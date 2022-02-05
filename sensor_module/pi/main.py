@@ -50,7 +50,15 @@ def main():
     # reset_feather()
     pyb = pyboard.Pyboard(FEATHER_DEVICE, 115200)
     try:
-        pyb.enter_raw_repl()
+        for _ in range(3):
+            try:
+                pyb.enter_raw_repl()
+            except pyboard.PyboardError:
+                pass
+            else:
+                break
+        else:
+            raise RuntimeError("Failed to enter raw repl")
 
         print("Removing and reputting feather libs...")
         pyb.exec(
