@@ -71,7 +71,9 @@ else:
             pyb.fs_put(lib_path, f"/lib/{lib_path.name}")
 
         print("Exec-ing feather main program...")
-        pyb.exec(feather_main_contents, data_consumer=on_feather_output)
+        # TODO : remove
+        # pyb.exec(feather_main_contents, data_consumer=on_feather_output)
+        pyb.exec("print('fooooooo')", data_consumer=on_feather_output)
     finally:
         pyb.exit_raw_repl()
         pyb.close()
