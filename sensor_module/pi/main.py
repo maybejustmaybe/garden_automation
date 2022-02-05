@@ -14,7 +14,7 @@ def load_esptool_module():
     ESPTOOL_PATH = Path(sys.exec_prefix) / "bin" / "esptool.py"
 
     esptool_spec = importlib.util.spec_from_file_location("esptool", str(ESPTOOL_PATH))
-    esptool = importlib.util.module_from_spec()
+    esptool = importlib.util.module_from_spec(esptool_spec)
     esptool_spec.loader.exec_module(esptool)
 
     return esptool
