@@ -1,6 +1,10 @@
+import enum
+import json
 import logging
 import multiprocessing as mp
 from pathlib import Path
+
+import pydantic
 
 from lib import pyboard
 
@@ -37,10 +41,30 @@ FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 #     print("Reset feather.")
 
 
+class SensorType(enum.Enum):
+    SHT30 = "sht30"
+    AHTX0 = "ahtx0"
+
+class ReadingType(enum.Enum):
+    TEMPERATURE = "temp"
+    HUMIDITY = "humidity"
+
+class SensorReadingBase(pydantic.BaseModel):
+    sensor: SensorType
+    tick_diff: int
+    reading_type: ReadingType
+    reading: float
+
+
 def read_feather_sensors(queue):
     FEATHER_ENTER_REPL_NUM_RETRIES = 3
 
     _output_chunks = list()
+
+    def on_feather_data(readings_json):
+        readings_list = json.loads(readings_json)
+        for reading_dict in readings_list:
+            queue.put(SensorReadingBase(**reading_dict))
 
     def on_feather_output(raw):
         chunk = raw.decode("utf-8", errors="replace")
@@ -48,9 +72,9 @@ def read_feather_sensors(queue):
 
         if len(split_chunks) > 1:
             # TODO : send data back on queue
-            print("".join([*_output_chunks, split_chunks[0]]))
+            on_feather_data("".join([*_output_chunks, split_chunks[0]]))
             for line_chunk in split_chunks[1:-1]:
-                print(line_chunk)
+                on_feather_data(line_chunk)
 
             _output_chunks.clear()
             _output_chunks.append(split_chunks[-1])
@@ -104,19 +128,37 @@ else:
         feather_pyboard.exit_raw_repl()
         feather_pyboard.close()
 
-    print("done")
-
 
 def main():
-    logging.info("Starting sensor reading gathering processes...")
     mp.set_start_method("forkserver")
+
     sensor_reading_queue = mp.Queue()
     feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
 
+    procs = [feather_proc]
+
     try:
-        feather_proc.start()
+        logging.info("Starting sensor reading gathering processes...")
+
+        for p in procs:
+            p.start()
+
+        logging.info("Gathering data from processes...")
+        while True:
+            while not sensor_reading_queue.empty():
+                reading = sensor_reading_queue.get()
+                print(reading.json())
+
+            for p in procs:
+                if p.is_alive():
+                    break
+            else:
+                break
     finally:
-        feather_proc.join()
+        logging.info("Shutting down processes.")
+        for p in procs:
+            if p.pid is not None:
+                p.join()
 
     logging.info("Exiting.")
 

@@ -165,25 +165,47 @@ def main():
     transmit_timer.init(period=TRANSMIT_PERIOD_MS, callback=transmit_cb)
 
     def sht30_on_read(tick, last_tick, temp, humidity):
-        transmit_buffer.append(
-            {
-                "type": "reading",
-                "sensor": "sht30",
-                "tick_diff": tick - last_tick,
-                "temp": temp,
-                "humidity": humidity
-            }
+        tick_diff = tick - last_tick
+
+        transmit_buffer.extend(
+            (
+                {
+                    "type": "reading",
+                    "sensor": "sht30",
+                    "tick_diff": tick_diff,
+                    "reading_type": "temp",
+                    "reading": temp,
+                },
+                {
+                    "type": "reading",
+                    "sensor": "sht30",
+                    "tick_diff": tick_diff,
+                    "reading_type": "humidity",
+                    "reading": humidity,
+                },
+            )
         )
 
     def ahtx0_on_read(tick, last_tick, temp, humidity):
-        transmit_buffer.append(
-            {
-                "type": "reading",
-                "sensor": "ahtx0",
-                "tick_diff": tick - last_tick,
-                "temp": temp,
-                "humidity": humidity
-            }
+        tick_diff = tick - last_tick
+
+        transmit_buffer.extend(
+            (
+                {
+                    "type": "reading",
+                    "sensor": "ahtx0",
+                    "tick_diff": tick_diff,
+                    "reading_type": "temp",
+                    "reading": temp,
+                },
+                {
+                    "type": "reading",
+                    "sensor": "ahtx0",
+                    "tick_diff": tick_diff,
+                    "reading_type": "humidity",
+                    "reading": humidity,
+                },
+            )
         )
 
     sensor_name_to_cb = {
