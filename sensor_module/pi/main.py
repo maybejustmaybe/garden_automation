@@ -157,6 +157,8 @@ def main():
                     break
             else:
                 break
+    except KeyboardInterrupt:
+        pass
     finally:
         logging.info("Shutting down processes.")
         for p in procs:
