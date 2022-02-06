@@ -1,7 +1,12 @@
 import logging
-from lib import pyboard
-from pathlib import Path
 import multiprocessing as mp
+from pathlib import Path
+
+from lib import pyboard
+
+logging.basicConfig(
+    level=logging.INFO,
+)
 
 FEATHER_DEVICE = "/dev/ttyUSB0"
 FEATHER_BAUD_RATE = 115200
@@ -16,25 +21,27 @@ FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 # import importlib.util
 # def load_esptool_module():
 #     ESPTOOL_PATH = Path(sys.exec_prefix) / "bin" / "esptool.py"
-# 
+#
 #     esptool_spec = importlib.util.spec_from_file_location("esptool", str(ESPTOOL_PATH))
 #     esptool = importlib.util.module_from_spec(esptool_spec)
 #     esptool_spec.loader.exec_module(esptool)
-# 
+#
 #     return esptool
-# 
+#
 # esptool = load_esptool_module()
 #
 # def reset_feather():
 #     print("Resetting feather...")
-#     esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)    
+#     esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)
 #     esp_loader.soft_reset(True)
 #     print("Reset feather.")
+
 
 def read_feather_sensors(queue):
     FEATHER_ENTER_REPL_NUM_RETRIES = 3
 
     _output_chunks = list()
+
     def on_feather_output(raw):
         chunk = raw.decode("utf-8", errors="replace")
         split_chunks = chunk.split("\n")
@@ -60,14 +67,16 @@ def read_feather_sensors(queue):
                 pass
             else:
                 if enter_repl_attempt != 1:
-                    logging.warn(f"Entering repl on feather took {enter_repl_attempt} attempts")
+                    logging.warn(
+                        f"Entering repl on feather took {enter_repl_attempt} attempts"
+                    )
                 break
         else:
             raise RuntimeError("Feather failed to enter repl")
 
         logging.info("Removing and reputting feather libs...")
         feather_pyboard.exec(
-"""
+            """
 import os
 try:
     os.stat("/lib")
@@ -97,6 +106,7 @@ else:
 
     print("done")
 
+
 def main():
     logging.info("Starting sensor reading gathering processes...")
     mp.set_start_method("forkserver")
@@ -109,6 +119,7 @@ def main():
         feather_proc.join()
 
     logging.info("Exiting.")
+
 
 if __name__ == "__main__":
     main()
