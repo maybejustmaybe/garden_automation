@@ -122,7 +122,10 @@ else:
         logging.info("Feather initialization complete.")
 
         logging.info("Exec-ing feather main program...")
-        feather_pyboard.exec(feather_main_contents, data_consumer=on_feather_output)
+        try:
+            feather_pyboard.exec(feather_main_contents, data_consumer=on_feather_output)
+        except KeyboardInterrupt:
+            return
     finally:
         logging.info("Cleaning up feather.")
         feather_pyboard.exit_raw_repl()
