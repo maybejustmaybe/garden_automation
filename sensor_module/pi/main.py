@@ -149,6 +149,7 @@ def read_atlas_color_sensor(queue):
     atlas_color_serial.flush()
 
     atlas_color_serial.write("C,1\r".encode("utf-8"))
+    atlas_color_serial.flush()
 
     # TODO :remove
     try:
