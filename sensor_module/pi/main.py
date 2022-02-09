@@ -5,6 +5,7 @@ import multiprocessing as mp
 from pathlib import Path
 
 import pydantic
+import serial
 
 from lib import pyboard
 
@@ -12,8 +13,10 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-FEATHER_DEVICE = "/dev/ttyUSB0"
+FEATHER_PORT = "/dev/ttyUSB0"
 FEATHER_BAUD_RATE = 115200
+ATLAS_COLOR_PORT = "/dev/ttyUSB1"
+ATLAS_COLOR_BAUD_RATE = 9600
 
 FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
 FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
@@ -44,6 +47,7 @@ FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 class SensorType(enum.Enum):
     SHT30 = "sht30"
     AHTX0 = "ahtx0"
+    ATLAS_COLOR = "atlas_color"
 
 class ReadingType(enum.Enum):
     TEMPERATURE = "temp"
@@ -82,7 +86,7 @@ def read_feather_sensors(queue):
             _output_chunks.append(split_chunks[0])
 
     logging.info("Initializing feather...")
-    feather_pyboard = pyboard.Pyboard(FEATHER_DEVICE, FEATHER_BAUD_RATE)
+    feather_pyboard = pyboard.Pyboard(FEATHER_PORT, FEATHER_BAUD_RATE)
     try:
         for enter_repl_attempt in range(1, FEATHER_ENTER_REPL_NUM_RETRIES + 1):
             try:
@@ -131,14 +135,36 @@ else:
         feather_pyboard.exit_raw_repl()
         feather_pyboard.close()
 
+def read_atlas_color_sensor(queue):
+    atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=0)
+
+    atlas_color_serial.write("C,1\r".encode("utf-8"))
+
+    while True:
+        lsl = len(b'\r')
+        line_buffer = []
+        while True:
+            next_char = atlas_color_serial.read(1)
+            if next_char == b'':
+                break
+            line_buffer.append(next_char)
+            if (len(line_buffer) >= lsl and
+                    line_buffer[-lsl:] == [b'\r']):
+                break
+
+        print (b''.join(line_buffer)).encode("utf-8")
+
 
 def main():
     mp.set_start_method("forkserver")
 
     sensor_reading_queue = mp.Queue()
     feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
+    atlas_color_proc = mp.Process(target=read_atlas_color_sensor, args=(sensor_reading_queue,))
 
-    procs = [feather_proc]
+    # TODO 
+    # procs = [feather_proc, atlas_color_proc]
+    procs = [atlas_color_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
