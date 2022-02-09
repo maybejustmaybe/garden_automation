@@ -249,7 +249,7 @@ def main():
                 read_sensor(sensor_name)
         finally:
             poll_loop_duration_time_ms = time.ticks_ms() - poll_loop_start_time_ms
-            time.sleep_ms(SENSOR_POLL_PERIOD_MS - poll_loop_duration_time_ms)
+            time.sleep_ms(max(0, SENSOR_POLL_PERIOD_MS - poll_loop_duration_time_ms))
 
 
 if __name__ == "__main__":

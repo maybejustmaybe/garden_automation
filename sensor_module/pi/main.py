@@ -2,9 +2,11 @@ import enum
 import json
 import logging
 import multiprocessing as mp
+import time
 from pathlib import Path
 
 import pydantic
+import serial
 
 from lib import pyboard
 
@@ -12,8 +14,10 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-FEATHER_DEVICE = "/dev/ttyUSB0"
+FEATHER_PORT = "/dev/ttyUSB0"
 FEATHER_BAUD_RATE = 115200
+ATLAS_COLOR_PORT = "/dev/ttyUSB1"
+ATLAS_COLOR_BAUD_RATE = 9600
 
 FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
 FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
@@ -44,14 +48,22 @@ FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 class SensorType(enum.Enum):
     SHT30 = "sht30"
     AHTX0 = "ahtx0"
+    ATLAS_COLOR = "atlas_color"
+
 
 class ReadingType(enum.Enum):
     TEMPERATURE = "temp"
     HUMIDITY = "humidity"
+    LUX = "lux"
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
 
-class SensorReadingBase(pydantic.BaseModel):
+
+class SensorReading(pydantic.BaseModel):
     sensor: SensorType
-    tick_diff: int
+    # TODO : consider adding this back for monitoring purposes
+    # tick_diff: int
     reading_type: ReadingType
     reading: float
 
@@ -64,7 +76,7 @@ def read_feather_sensors(queue):
     def on_feather_data(readings_json):
         readings_list = json.loads(readings_json)
         for reading_dict in readings_list:
-            queue.put(SensorReadingBase(**reading_dict))
+            queue.put(SensorReading(**reading_dict))
 
     def on_feather_output(raw):
         chunk = raw.decode("utf-8", errors="replace")
@@ -82,7 +94,7 @@ def read_feather_sensors(queue):
             _output_chunks.append(split_chunks[0])
 
     logging.info("Initializing feather...")
-    feather_pyboard = pyboard.Pyboard(FEATHER_DEVICE, FEATHER_BAUD_RATE)
+    feather_pyboard = pyboard.Pyboard(FEATHER_PORT, FEATHER_BAUD_RATE)
     try:
         for enter_repl_attempt in range(1, FEATHER_ENTER_REPL_NUM_RETRIES + 1):
             try:
@@ -132,13 +144,84 @@ else:
         feather_pyboard.close()
 
 
+def read_atlas_color_sensor(queue):
+    CONTINUOUS_POLL_PERIOD_CONST_MS = 400
+    CONTINUOUS_POLL_MULTIPLIER = 3
+    POLL_PERIOD_MS = CONTINUOUS_POLL_PERIOD_CONST_MS * CONTINUOUS_POLL_MULTIPLIER
+
+    SERIAL_TIMEOUT_S = POLL_PERIOD_MS * 8 / 1000
+    SERIAL_READ_PERIOD_MS = POLL_PERIOD_MS * 4
+
+    atlas_color_serial = serial.Serial(
+        ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=SERIAL_TIMEOUT_S
+    )
+
+    atlas_color_serial.write("C,0\r".encode("utf-8"))
+    atlas_color_serial.write("O,LUX,1\r".encode("utf-8"))
+    atlas_color_serial.write("C,1\r".encode("utf-8"))
+    atlas_color_serial.flush()
+
+    def on_sensor_data(reading_tuple):
+        if len(reading_tuple) != 5:
+            raise RuntimeError(
+                "Unexpected number of readings from atlas color sensor: '{}'".format(
+                    ",".join(reading_tuple)
+                )
+            )
+
+        red_value, green_value, blue_value, lux_sentinel, lux_value = reading_tuple
+
+        assert lux_sentinel == "Lux"
+
+        for value, reading_type in zip(
+            (red_value, green_value, blue_value, lux_value),
+            (ReadingType.RED, ReadingType.GREEN, ReadingType.BLUE, ReadingType.LUX),
+        ):
+            queue.put(
+                SensorReading(
+                    sensor=SensorType.ATLAS_COLOR,
+                    reading_type=reading_type,
+                    reading=value,
+                )
+            )
+
+    def on_sensor_output(raw):
+        if raw[-1:] != b"\r":
+            raise RuntimeError(
+                "Atlas color sensor output did not end with carriage return: '{}'".format(
+                    raw.decode("utf-8")
+                )
+            )
+
+        if raw == b"*OK\r" or raw == b"\x00\r":
+            return
+
+        on_sensor_data(raw[:-1].decode("utf-8").split(","))
+
+    try:
+        while True:
+            loop_start = time.monotonic()
+
+            try:
+                while (raw := atlas_color_serial.read_until(b"\r")) != b'':
+                    on_sensor_output(raw)
+            finally:
+                loop_duration_ms = time.monotonic() - loop_start
+                time.sleep(max(0, (SERIAL_READ_PERIOD_MS - loop_duration_ms) / 1000))
+    except KeyboardInterrupt:
+        return
+
+
 def main():
     mp.set_start_method("forkserver")
 
     sensor_reading_queue = mp.Queue()
     feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
+    atlas_color_proc = mp.Process(
+        target=read_atlas_color_sensor, args=(sensor_reading_queue,)
+    )
 
-    procs = [feather_proc]
+    procs = [feather_proc, atlas_color_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
