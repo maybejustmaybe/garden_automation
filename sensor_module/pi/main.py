@@ -221,9 +221,7 @@ def main():
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
 
-    # TODO
-    # procs = [feather_proc, atlas_color_proc]
-    procs = [atlas_color_proc]
+    procs = [feather_proc, atlas_color_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
