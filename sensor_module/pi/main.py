@@ -136,7 +136,7 @@ else:
         feather_pyboard.close()
 
 def read_atlas_color_sensor(queue):
-    atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=0)
+    atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=1)
 
     atlas_color_serial.write("C,1\r".encode("utf-8"))
 
