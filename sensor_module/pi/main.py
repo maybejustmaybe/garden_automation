@@ -146,9 +146,17 @@ def read_atlas_color_sensor(queue):
     atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=SERIAL_TIMEOUT_S)
 
     atlas_color_serial.write("C,0\r".encode("utf-8"))
+    atlas_color_serial.write("O,LUX,1\r".encode("utf-8"))
     atlas_color_serial.flush()
 
     atlas_color_serial.write("C,1\r".encode("utf-8"))
+
+    def on_sensor_data(reading_tuple):
+        pass
+
+    def on_sensor_output(raw):
+        pass
+
 
     # TODO :remove
     try:
