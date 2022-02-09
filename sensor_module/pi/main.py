@@ -189,7 +189,7 @@ def read_atlas_color_sensor(queue):
         if raw[-1] != b"\r":
             raise RuntimeError(
                 "Atlas color sensor output did not end with carriage return: '{}'".format(
-                    raw.encode("utf-8")
+                    raw.decode("utf-8")
                 )
             )
 
