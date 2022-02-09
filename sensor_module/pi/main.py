@@ -206,8 +206,8 @@ def read_atlas_color_sensor(queue):
                 while raw := atlas_color_serial.read_until(b"\r"):
                     on_sensor_output(raw)
             finally:
-                loop_duration = time.monotonic() - loop_start
-                time.sleep_ms()
+                loop_duration_ms = time.monotonic() - loop_start
+                time.sleep(max(0, (SERIAL_READ_PERIOD_MS - loop_duration_ms) / 1000))
     except KeyboardInterrupt:
         return
 
