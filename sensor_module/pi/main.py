@@ -152,7 +152,10 @@ def read_atlas_color_sensor(queue):
                     line_buffer[-lsl:] == [b'\r']):
                 break
 
-        print((b''.join(line_buffer)).decode("utf-8"))
+        res = (b''.join(line_buffer)).decode("utf-8")
+
+        if res:
+            print(res)
 
 
 def main():
