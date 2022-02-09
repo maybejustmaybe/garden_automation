@@ -179,9 +179,9 @@ def read_atlas_color_sensor(queue):
         ):
             queue.put(
                 SensorReading(
-                    SensorType.ATLAS_COLOR,
-                    reading_type,
-                    value,
+                    sensor=SensorType.ATLAS_COLOR,
+                    reading_type=reading_type,
+                    reading=value,
                 )
             )
 
