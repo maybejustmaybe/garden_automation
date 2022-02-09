@@ -151,32 +151,18 @@ def read_atlas_color_sensor(queue):
     atlas_color_serial.write("C,1\r".encode("utf-8"))
 
     # TODO :remove
-    import time
-    for _ in range(10):
-        res = atlas_color_serial.read_until(b'\r')
+    try:
+        import time
+        for _ in range(5):
+            res = atlas_color_serial.read_until(b'\r')
 
-        if res == b'':
-            continue
-        
-        print(res)
-        time.sleep(.1)
-
-    while True:
-        lsl = len(b'\r')
-        line_buffer = []
-        while True:
-            next_char = atlas_color_serial.read(1)
-            if next_char == b'':
-                break
-            line_buffer.append(next_char)
-            if (len(line_buffer) >= lsl and
-                    line_buffer[-lsl:] == [b'\r']):
-                break
-
-        res = (b''.join(line_buffer)).decode("utf-8")
-
-        if res:
+            if res == b'':
+                continue
+            
             print(res)
+            time.sleep(.1)
+    except KeyboardInterrupt:
+        return
 
 
 def main():
