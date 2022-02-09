@@ -120,7 +120,7 @@ else:
         except KeyboardInterrupt:
             return
     finally:
-        logging.info("Cleaning up feather.")
+        logging.info("Cleaning up feather...")
         feather_pyboard.exit_raw_repl()
         feather_pyboard.close()
 
@@ -191,14 +191,24 @@ def read_atlas_color_sensor(queue):
                 time.sleep(max(0, (SERIAL_READ_PERIOD_MS - loop_duration_ms) / 1000))
     except KeyboardInterrupt:
         return
+    finally:
+        logging.info("Cleaning up atlas color sensor...")
+        atlas_color_serial.close()
 
 def publish_sensor_readings(sensor_reading_queue):
+    redis_client = redis.Redis(host="localhost", port=REDIS_PORT)
+
     try:
+        logging.info("Publishing sensor readings...")
         while True:
             reading = sensor_reading_queue.get(block=True)
-            print(reading.json())
+
+            redis_client.publish("sensor_module.reading.{}".format(reading.sensor_type.value), reading.json())
     except KeyboardInterrupt:
         return
+    finally:
+        logging.info("Cleaning up redis client...")
+        redis_client.close()
 
 
 def main():
