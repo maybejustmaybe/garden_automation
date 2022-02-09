@@ -203,7 +203,7 @@ def publish_sensor_readings(sensor_reading_queue):
         while True:
             reading = sensor_reading_queue.get(block=True)
 
-            redis_client.publish("sensor_module.reading.{}".format(reading.sensor_type.value), reading.json())
+            redis_client.publish("sensor_module.readings.{}".format(reading.sensor_type.value), reading.json())
     except KeyboardInterrupt:
         return
     finally:
