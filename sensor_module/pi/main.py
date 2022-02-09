@@ -203,7 +203,7 @@ def read_atlas_color_sensor(queue):
             loop_start = time.monotonic()
 
             try:
-                while raw := atlas_color_serial.read_until(b"\r"):
+                while (raw := atlas_color_serial.read_until(b"\r")) != b'':
                     on_sensor_output(raw)
             finally:
                 loop_duration_ms = time.monotonic() - loop_start
