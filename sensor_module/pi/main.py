@@ -2,6 +2,7 @@ import enum
 import json
 import logging
 import multiprocessing as mp
+import time
 from pathlib import Path
 
 import pydantic
@@ -49,13 +50,20 @@ class SensorType(enum.Enum):
     AHTX0 = "ahtx0"
     ATLAS_COLOR = "atlas_color"
 
+
 class ReadingType(enum.Enum):
     TEMPERATURE = "temp"
     HUMIDITY = "humidity"
+    LUX = "lux"
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
 
-class SensorReadingBase(pydantic.BaseModel):
+
+class SensorReading(pydantic.BaseModel):
     sensor: SensorType
-    tick_diff: int
+    # TODO : consider adding this back for monitoring purposes
+    # tick_diff: int
     reading_type: ReadingType
     reading: float
 
@@ -68,7 +76,7 @@ def read_feather_sensors(queue):
     def on_feather_data(readings_json):
         readings_list = json.loads(readings_json)
         for reading_dict in readings_list:
-            queue.put(SensorReadingBase(**reading_dict))
+            queue.put(SensorReading(**reading_dict))
 
     def on_feather_output(raw):
         chunk = raw.decode("utf-8", errors="replace")
@@ -135,41 +143,71 @@ else:
         feather_pyboard.exit_raw_repl()
         feather_pyboard.close()
 
+
 def read_atlas_color_sensor(queue):
     CONTINUOUS_POLL_PERIOD_CONST_MS = 400
-    CONTINUOUS_POLL_MULTIPLIER = 1
-    POLL_PERIOD_MS = CONTINUOUS_POLL_PERIOD_CONST_MS * CONTINUOUS_POLL_MULTIPLIER 
+    CONTINUOUS_POLL_MULTIPLIER = 3
+    POLL_PERIOD_MS = CONTINUOUS_POLL_PERIOD_CONST_MS * CONTINUOUS_POLL_MULTIPLIER
 
     SERIAL_TIMEOUT_S = POLL_PERIOD_MS * 8 / 1000
     SERIAL_READ_PERIOD_MS = POLL_PERIOD_MS * 4
 
-    atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=SERIAL_TIMEOUT_S)
-
-    # TODO :remove
-    import time
+    atlas_color_serial = serial.Serial(
+        ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=SERIAL_TIMEOUT_S
+    )
 
     atlas_color_serial.write("C,0\r".encode("utf-8"))
     atlas_color_serial.write("O,LUX,1\r".encode("utf-8"))
     atlas_color_serial.write("C,1\r".encode("utf-8"))
-    time.sleep(1)
     atlas_color_serial.flush()
 
     def on_sensor_data(reading_tuple):
-        pass
+        if len(reading_tuple) != 5:
+            raise RuntimeError(
+                "Unexpected number of readings from atlas color sensor: '{}'".format(
+                    ",".join(reading_tuple)
+                )
+            )
+
+        red_value, green_value, blue_value, lux_sentinel, lux_value = reading_tuple
+
+        assert lux_sentinel == "Lux"
+
+        for value, reading_type in zip(
+            (red_value, green_value, blue_value, lux_value),
+            (ReadingType.RED, ReadingType.GREEN, ReadingType.BLUE, ReadingType.LUX),
+        ):
+            queue.put(
+                SensorReading(
+                    SensorType.ATLAS_COLOR,
+                    reading_type,
+                    value,
+                )
+            )
 
     def on_sensor_output(raw):
-        pass
+        if raw[-1] != b"\r":
+            raise RuntimeError(
+                "Atlas color sensor output did not end with carriage return: '{}'".format(
+                    raw.encode("utf-8")
+                )
+            )
 
+        if raw == b"*OK\r" or raw == b"\x00\r":
+            return
+
+        on_sensor_data(raw[:-1].decode("utf-8").split(","))
 
     try:
-        for _ in range(5):
-            res = atlas_color_serial.read_until(b'\r')
+        while True:
+            loop_start = time.monotonic()
 
-            if res == b'':
-                continue
-            
-            print(res)
-            time.sleep(.1)
+            try:
+                while raw := atlas_color_serial.read_until(b"\r"):
+                    on_sensor_output(raw)
+            finally:
+                loop_duration = time.monotonic() - loop_start
+                time.sleep_ms()
     except KeyboardInterrupt:
         return
 
@@ -179,9 +217,11 @@ def main():
 
     sensor_reading_queue = mp.Queue()
     feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
-    atlas_color_proc = mp.Process(target=read_atlas_color_sensor, args=(sensor_reading_queue,))
+    atlas_color_proc = mp.Process(
+        target=read_atlas_color_sensor, args=(sensor_reading_queue,)
+    )
 
-    # TODO 
+    # TODO
     # procs = [feather_proc, atlas_color_proc]
     procs = [atlas_color_proc]
 
