@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 import pydantic
+import redis
 import serial
 
 from lib import pyboard
@@ -23,27 +24,7 @@ FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
 FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
 FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 
-# TODO : remove
-# import sys
-# import importlib
-# import importlib.util
-# def load_esptool_module():
-#     ESPTOOL_PATH = Path(sys.exec_prefix) / "bin" / "esptool.py"
-#
-#     esptool_spec = importlib.util.spec_from_file_location("esptool", str(ESPTOOL_PATH))
-#     esptool = importlib.util.module_from_spec(esptool_spec)
-#     esptool_spec.loader.exec_module(esptool)
-#
-#     return esptool
-#
-# esptool = load_esptool_module()
-#
-# def reset_feather():
-#     print("Resetting feather...")
-#     esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)
-#     esp_loader.soft_reset(True)
-#     print("Reset feather.")
-
+REDIS_PORT = 7661
 
 class SensorType(enum.Enum):
     SHT30 = "sht30"
@@ -211,41 +192,59 @@ def read_atlas_color_sensor(queue):
     except KeyboardInterrupt:
         return
 
+def publish_sensor_readings(sensor_reading_queue):
+    try:
+        while True:
+            reading = sensor_reading_queue.get(block=True)
+            print(reading.json())
+    except KeyboardInterrupt:
+        return
+
 
 def main():
+    SENSOR_PROC_POLL_PERIOD_S = .5
+
     mp.set_start_method("forkserver")
 
     sensor_reading_queue = mp.Queue()
+    publish_proc = mp.Process(target=publish_sensor_readings, args=(sensor_reading_queue,))
     feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
     atlas_color_proc = mp.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
 
-    procs = [feather_proc, atlas_color_proc]
+    sensor_procs = [feather_proc, atlas_color_proc]
+
 
     try:
         logging.info("Starting sensor reading gathering processes...")
 
-        for p in procs:
+        for p in sensor_procs:
             p.start()
 
-        logging.info("Gathering data from processes...")
-        while True:
-            while not sensor_reading_queue.empty():
-                reading = sensor_reading_queue.get()
-                print(reading.json())
+        try:
+            publish_proc.start()
 
-            for p in procs:
-                if p.is_alive():
+            logging.info("Gathering data from processes...")
+
+            while True:
+                for p in sensor_procs:
+                    if p.is_alive():
+                        break
+                else:
                     break
-            else:
-                break
+
+                time.sleep(SENSOR_PROC_POLL_PERIOD_S)
+        finally:
+            publish_proc.terminate()
+            publish_proc.join()
     except KeyboardInterrupt:
         pass
     finally:
         logging.info("Shutting down processes.")
-        for p in procs:
+        for p in sensor_procs:
             if p.pid is not None:
+                p.terminate()
                 p.join()
 
     logging.info("Exiting.")
