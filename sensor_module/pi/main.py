@@ -42,7 +42,7 @@ class ReadingType(enum.Enum):
 
 
 class SensorReading(pydantic.BaseModel):
-    sensor: SensorType
+    sensor_type: SensorType
     # TODO : consider adding this back for monitoring purposes
     # tick_diff: int
     reading_type: ReadingType
@@ -160,7 +160,7 @@ def read_atlas_color_sensor(queue):
         ):
             queue.put(
                 SensorReading(
-                    sensor=SensorType.ATLAS_COLOR,
+                    sensor_type=SensorType.ATLAS_COLOR,
                     reading_type=reading_type,
                     reading=value,
                 )
