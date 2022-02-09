@@ -186,16 +186,10 @@ def read_atlas_color_sensor(queue):
             )
 
     def on_sensor_output(raw):
-        if raw[-1] != b"\r":
-            # TODO : uncomment
-            # raise RuntimeError(
-            #     "Atlas color sensor output did not end with carriage return: '{}'".format(
-            #         raw.decode("utf-8")
-            #     )
-            # )
+        if raw[-1:] != b"\r":
             raise RuntimeError(
                 "Atlas color sensor output did not end with carriage return: '{}'".format(
-                    raw
+                    raw.decode("utf-8")
                 )
             )
 
