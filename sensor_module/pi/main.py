@@ -136,13 +136,23 @@ else:
         feather_pyboard.close()
 
 def read_atlas_color_sensor(queue):
-    atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=1)
+    CONTINUOUS_POLL_PERIOD_CONST_MS = 400
+    CONTINUOUS_POLL_MULTIPLIER = 1
+    POLL_PERIOD_MS = CONTINUOUS_POLL_PERIOD_CONST_MS * CONTINUOUS_POLL_MULTIPLIER 
+
+    SERIAL_TIMEOUT_S = POLL_PERIOD_MS * 8 / 1000
+    SERIAL_READ_PERIOD_MS = POLL_PERIOD_MS * 4
+
+    atlas_color_serial = serial.Serial(ATLAS_COLOR_PORT, ATLAS_COLOR_BAUD_RATE, timeout=SERIAL_TIMEOUT_S)
+
+    atlas_color_serial.write("C,0\r".encode("utf-8"))
+    atlas_color_serial.flush()
 
     atlas_color_serial.write("C,1\r".encode("utf-8"))
 
     # TODO :remove
     import time
-    while True:
+    for _ in range(10):
         res = atlas_color_serial.read_until(b'\r')
 
         if res == b'':
