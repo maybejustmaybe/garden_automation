@@ -140,6 +140,17 @@ def read_atlas_color_sensor(queue):
 
     atlas_color_serial.write("C,1\r".encode("utf-8"))
 
+    # TODO :remove
+    import time
+    while True:
+        res = atlas_color_serial.read_until(b'\r')
+
+        if res == b'':
+            continue
+        
+        print(res)
+        time.sleep(.1)
+
     while True:
         lsl = len(b'\r')
         line_buffer = []
