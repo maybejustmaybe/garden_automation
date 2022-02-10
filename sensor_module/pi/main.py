@@ -229,10 +229,6 @@ def publish_sensor_readings(sensor_reading_queue):
 
 
 def main():
-    # TODO
-    publish_sensor_readings(mp.Queue())
-    return
-
     SENSOR_PROC_POLL_PERIOD_S = .5
 
     mp.set_start_method("forkserver")
