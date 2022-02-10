@@ -63,7 +63,7 @@ class SensorReading(pydantic.BaseModel):
     # TODO : consider adding this back for monitoring purposes
     # tick_diff: int
     reading_type: ReadingType
-    reading: float
+    value: float
 
 
 def read_feather_sensors(queue):
@@ -179,7 +179,7 @@ def read_atlas_color_sensor(queue):
                 SensorReading(
                     sensor_type=SensorType.ATLAS_COLOR,
                     reading_type=reading_type,
-                    reading=value,
+                    value=value,
                 )
             )
 
@@ -227,10 +227,13 @@ def publish_sensor_readings(sensor_reading_queue):
 
     try:
         logging.info("Publishing sensor readings...")
+
+        # TODO : consider optimizing this with a pipeline
         while True:
             reading = sensor_reading_queue.get(block=True)
 
-            redis_client.publish("sensor_module.readings.{}".format(reading.sensor_type.value), reading.json())
+            redis_client.ts().add(f"sensor_readings.{reading.sensor_type.value}.{reading.reading_type.value}", "*", reading.value)
+            
     except KeyboardInterrupt:
         return
     finally:

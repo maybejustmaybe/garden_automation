@@ -174,14 +174,14 @@ def main():
                     "sensor_type": "sht30",
                     "tick_diff": tick_diff,
                     "reading_type": "temp",
-                    "reading": temp,
+                    "value": temp,
                 },
                 {
                     "type": "reading",
                     "sensor_type": "sht30",
                     "tick_diff": tick_diff,
                     "reading_type": "humidity",
-                    "reading": humidity,
+                    "value": humidity,
                 },
             )
         )
@@ -196,14 +196,14 @@ def main():
                     "sensor_type": "ahtx0",
                     "tick_diff": tick_diff,
                     "reading_type": "temp",
-                    "reading": temp,
+                    "value": temp,
                 },
                 {
                     "type": "reading",
                     "sensor_type": "ahtx0",
                     "tick_diff": tick_diff,
                     "reading_type": "humidity",
-                    "reading": humidity,
+                    "value": humidity,
                 },
             )
         )
