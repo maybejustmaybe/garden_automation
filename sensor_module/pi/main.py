@@ -180,7 +180,7 @@ def read_atlas_color_sensor(queue):
                     raw.decode("utf-8")
                 )
             )
-
+        
         if raw == b"*OK\r" or raw == b"\x00\r":
             return
 
@@ -207,7 +207,13 @@ def publish_sensor_readings(sensor_reading_queue):
 
     for sensor_type, reading_types in SENSOR_TYPE_TO_READING_TYPES.items():
         for r_type in reading_types:
-            redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
+            try:
+                redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
+            except redis.exceptions.ResponseError as e:
+                # TODO
+                import pdb; pdb.set_trace()
+                raise
+                
 
     # TODO
     return
