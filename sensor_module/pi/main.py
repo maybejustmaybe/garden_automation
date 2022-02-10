@@ -210,13 +210,10 @@ def publish_sensor_readings(sensor_reading_queue):
             try:
                 redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
             except redis.exceptions.ResponseError as e:
-                # TODO
-                import pdb; pdb.set_trace()
-                raise
+                if e.args[0] == "TSDB: key already exists":
+                    continue
                 
-
-    # TODO
-    return
+                raise
 
     try:
         logging.info("Publishing sensor readings...")
