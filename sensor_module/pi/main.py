@@ -4,6 +4,7 @@ import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
+from logging.handlers import QueueHandler, QueueListener
 
 import pydantic
 import redis
@@ -11,9 +12,18 @@ import serial
 
 from lib import pyboard
 
+
 logging.basicConfig(
     level=logging.INFO,
 )
+logger = logging.getLogger(__name__)
+
+_log_queue = mp.Queue()
+_log_queue_handler = QueueHandler(_log_queue)
+
+logger.addHandler(_log_queue_handler)
+
+log_listener = QueueListener(_log_queue, logging.StreamHandler())
 
 FEATHER_PORT = "/dev/ttyUSB0"
 FEATHER_BAUD_RATE = 115200
@@ -242,7 +252,6 @@ def main():
 
     sensor_procs = [feather_proc, atlas_color_proc]
 
-
     try:
         logging.info("Starting sensor reading gathering processes...")
 
@@ -281,4 +290,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        log_listener.start()
+        main()
+    finally:
+        log_listener.stop()
