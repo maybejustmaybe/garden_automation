@@ -255,10 +255,13 @@ def main():
             logging.info("Gathering data from processes...")
 
             while True:
+                procs_alive = True
                 for p in sensor_procs:
-                    if p.is_alive():
+                    if not p.is_alive():
+                        procs_alive = False
                         break
-                else:
+                
+                if not procs_alive:
                     break
 
                 time.sleep(SENSOR_PROC_POLL_PERIOD_S)
