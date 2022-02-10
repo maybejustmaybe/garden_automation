@@ -25,6 +25,7 @@ FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
 FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 
 REDIS_PORT = 7661
+REDIS_RETENTION_MS = 30 * 60 * 1000
 
 class SensorType(enum.Enum):
     SHT30 = "sht30"
@@ -39,6 +40,12 @@ class ReadingType(enum.Enum):
     RED = "red"
     GREEN = "green"
     BLUE = "blue"
+
+SENSOR_TYPE_TO_READING_TYPES = {
+    SensorType.SHT30: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
+    SensorType.AHTX0: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
+    SensorType.ATLAS_COLOR: (ReadingType.LUX, ReadingType.RED, ReadingType.GREEN, ReadingType.BLUE),
+}
 
 
 class SensorReading(pydantic.BaseModel):
@@ -197,6 +204,13 @@ def read_atlas_color_sensor(queue):
 
 def publish_sensor_readings(sensor_reading_queue):
     redis_client = redis.Redis(host="localhost", port=REDIS_PORT)
+
+    for sensor_type, reading_types in SENSOR_TYPE_TO_READING_TYPES.items():
+        for r_type in reading_types:
+            redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
+
+    # TODO
+    return
 
     try:
         logging.info("Publishing sensor readings...")
