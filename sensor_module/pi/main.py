@@ -241,12 +241,12 @@ def publish_sensor_readings(sensor_reading_queue):
 def main():
     SENSOR_PROC_POLL_PERIOD_S = .5
 
-    mp.set_start_method("forkserver")
+    spawn_ctx = mp.get_context("forkserver")
 
-    sensor_reading_queue = mp.Queue()
-    publish_proc = mp.Process(target=publish_sensor_readings, args=(sensor_reading_queue,))
-    feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
-    atlas_color_proc = mp.Process(
+    sensor_reading_queue = spawn_ctx.Queue()
+    publish_proc = spawn_ctx.Process(target=publish_sensor_readings, args=(sensor_reading_queue,))
+    feather_proc = spawn_ctx.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
+    atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
 
