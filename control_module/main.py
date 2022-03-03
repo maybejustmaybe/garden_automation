@@ -29,34 +29,38 @@ def connect_to_wifi():
     print("Connected (IP): {}".format(wlan.ifconfig()[0]))
 
 
-def water(time):
+def water(duration):
     PUMP_BUFFER_SLEEP_MS = 10 * 1000
 
-    print("Watering for: {}s".format(time))
+    print("Watering for: {}s".format(duration))
 
     valve_pin = Pin(VALVE_PIN_NO, Pin.OUT)
     pump_pin = Pin(PUMP_PIN_NO, Pin.OUT)
 
     try:
+        print("Opening valve...")
         valve_pin.on()
         time.sleep_ms(PUMP_BUFFER_SLEEP_MS)
 
         try:
+            print("Turning on pump...")
             pump_pin.on()
 
-            time.sleep_ms(time * 1000)
+            time.sleep_ms(duration * 1000)
         finally:
+            print("Turning off pump.")
             pump_pin.off()
         
     finally:
         time.sleep_ms(PUMP_BUFFER_SLEEP_MS)
+        print("Closing valve.")
         valve_pin.off()
 
     return True
 
 def main():
     REQUEST_TYPE_TO_ARGS = {
-        "water": ["time"],
+        "water": ["duration"],
     }
     REQUEST_TYPE_TO_FUNC = {
         "water": water
@@ -81,15 +85,8 @@ def main():
 
     print("Listening for connections...")
 
-    # TODO : remove
-    server_socket.settimeout(1)
     while True:
-        try:
-            client_socket = server_socket.accept()[0]
-        except OSError:
-            # TODO : remove
-            print("...")
-            continue
+        client_socket = server_socket.accept()[0]
 
         try:
             print("Reading payload from client...")
@@ -119,13 +116,20 @@ def main():
                 client_socket.send(json.dumps({"success": False}))
                 continue
 
-            res = REQUEST_TYPE_TO_FUNC[request](**request_args)
-            client_socket.send(json.dumps({"success": res}))
+            try:
+                res = REQUEST_TYPE_TO_FUNC[request](**request_args)
+            except Exception as e:
+                print("Encountered an exception when processing request: {}".format(e))
+                client_socket.send(json.dumps({"success": False}))
+            else:
+                client_socket.send(json.dumps({"success": res}))
         except Exception:
             try:
                 client_socket.send(json.dumps({"success": False}))
             except Exception:
                 pass
+
+            raise
         finally:
             client_socket.close()
 
