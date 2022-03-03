@@ -6,7 +6,7 @@ import json
 import socket
 
 import network
-from machine import Pin, Timer
+from machine import Pin
 
 
 VALVE_PIN_NO = 5
