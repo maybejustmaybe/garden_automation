@@ -9,9 +9,6 @@ import network
 from machine import Pin
 
 
-VALVE_PIN_NO = 5
-PUMP_PIN_NO = 4
-
 PORT = 8081
 
 def connect_to_wifi():
@@ -30,31 +27,64 @@ def connect_to_wifi():
 
 
 def water(duration):
+    VALVE_PIN_NO = 5
+    PUMP_PIN_NO = 4
+    FLOAT_SWITCH_LOW_PIN_NO = 14
+
+    FLOAT_SWITCH_CHECK_PERIOD_MS = 300
     PUMP_BUFFER_SLEEP_MS = 10 * 1000
 
     print("Watering for: {}s".format(duration))
 
     valve_pin = Pin(VALVE_PIN_NO, Pin.OUT)
     pump_pin = Pin(PUMP_PIN_NO, Pin.OUT)
+    float_switch_low_pin = Pin(FLOAT_SWITCH_LOW_PIN_NO, Pin.IN, Pin.PULL_UP)
 
+    class FloatSwitchLowException(Exception):
+        @classmethod
+        def check(cls):
+            if float_switch_low_pin.value() == 1:
+                raise cls()
+
+    def sleep_until_timeout_or_float_switch_low(duration_ms):
+        _start = time.ticks_ms()
+        while True:
+            _elapsed_time = time.ticks_ms() - _start
+            if _elapsed_time >= duration_ms:
+                break
+
+            FloatSwitchLowException.check()
+            time.sleep_ms(min(FLOAT_SWITCH_CHECK_PERIOD_MS, duration_ms - _elapsed_time))
+
+    valve_opened = False
+    pump_engaged = False
     try:
+        FloatSwitchLowException.check()
+
         print("Opening valve...")
+        valve_opened = True
         valve_pin.on()
-        time.sleep_ms(PUMP_BUFFER_SLEEP_MS)
+
+        sleep_until_timeout_or_float_switch_low(PUMP_BUFFER_SLEEP_MS)
 
         try:
             print("Turning on pump...")
+            pump_engaged = True
             pump_pin.on()
 
-            time.sleep_ms(duration * 1000)
+            sleep_until_timeout_or_float_switch_low(duration * 1000)
         finally:
             print("Turning off pump.")
             pump_pin.off()
-        
+    except FloatSwitchLowException:
+        print("Float switch low triggered, exiting.")
+        return False
     finally:
-        time.sleep_ms(PUMP_BUFFER_SLEEP_MS)
-        print("Closing valve.")
-        valve_pin.off()
+        if valve_opened:
+            if pump_engaged:
+                time.sleep_ms(PUMP_BUFFER_SLEEP_MS)
+            print("Closing valve.")
+            valve_pin.off()
 
     return True
 
