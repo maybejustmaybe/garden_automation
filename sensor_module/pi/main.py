@@ -2,6 +2,7 @@ import enum
 import json
 import logging
 import multiprocessing as mp
+from multiprocessing.sharedctypes import Value
 import time
 from pathlib import Path
 from logging.handlers import QueueHandler, QueueListener
@@ -9,6 +10,7 @@ from logging.handlers import QueueHandler, QueueListener
 import pydantic
 import redis
 import serial
+import requests
 
 from lib import pyboard
 
@@ -25,9 +27,10 @@ logger.addHandler(_log_queue_handler)
 
 log_listener = QueueListener(_log_queue, logging.StreamHandler())
 
-FEATHER_PORT = "/dev/ttyUSB0"
-FEATHER_BAUD_RATE = 115200
-ATLAS_COLOR_PORT = "/dev/ttyUSB1"
+# TODO
+# FEATHER_PORT = "/dev/ttyUSB0"
+# FEATHER_BAUD_RATE = 115200
+ATLAS_COLOR_PORT = "/dev/ttyUSB0"
 ATLAS_COLOR_BAUD_RATE = 9600
 
 FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
@@ -41,6 +44,12 @@ class SensorType(enum.Enum):
     SHT30 = "sht30"
     AHTX0 = "ahtx0"
     ATLAS_COLOR = "atlas_color"
+    WEATHER_FORECAST_1_HOUR = "weather_forecast_1_hour"
+    WEATHER_FORECAST_3_HOUR = "weather_forecast_3_hour"
+    WEATHER_FORECAST_12_HOUR = "weather_forecast_12_hour"
+    WEATHER_FORECAST_24_HOUR = "weather_forecast_24_hour"
+    WEATHER_FORECAST_48_HOUR = "weather_forecast_48_hour"
+    WEATHER_HISTORICAL = "weather_historical"
 
 
 class ReadingType(enum.Enum):
@@ -50,6 +59,10 @@ class ReadingType(enum.Enum):
     RED = "red"
     GREEN = "green"
     BLUE = "blue"
+    WEATHER_TEMP = "weather_temp"
+    WEATHER_HUMIDITY = "weather_humidity"
+    WEATHER_CLOUDS = "weather_clouds"
+    WEATHER_WIND_SPEED = "weather_wind_speed"
 
 SENSOR_TYPE_TO_READING_TYPES = {
     SensorType.SHT30: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
@@ -161,11 +174,18 @@ def read_atlas_color_sensor(queue):
 
     def on_sensor_data(reading_tuple):
         if len(reading_tuple) != 5:
-            raise RuntimeError(
-                "Unexpected number of readings from atlas color sensor: '{}'".format(
+            # TODO :  decide if this should be an error
+            # raise RuntimeError(
+            #     "Unexpected number of readings from atlas color sensor: '{}'".format(
+            #         ",".join(reading_tuple)
+            #     )
+            # )
+            logging.error(
+                "Unexpected number of readings from atlas color sensor, skipping (reading): '{}'".format(
                     ",".join(reading_tuple)
                 )
             )
+            return
 
         red_value, green_value, blue_value, lux_sentinel, lux_value = reading_tuple
 
@@ -201,7 +221,7 @@ def read_atlas_color_sensor(queue):
             loop_start = time.monotonic()
 
             try:
-                while (raw := atlas_color_serial.read_until(b"\r")) != b'':
+                while (raw := atlas_color_serial.read_until(b"\r")) != b"":
                     on_sensor_output(raw)
             finally:
                 loop_duration_ms = time.monotonic() - loop_start
@@ -241,6 +261,107 @@ def publish_sensor_readings(sensor_reading_queue):
         redis_client.close()
 
 
+def get_weather(queue, data_type):
+    # TODO
+    # API_CALL_FREQUENCY_S = 60 * 60
+    API_CALL_FREQUENCY_S = 10 
+    READING_KEYS = [
+        "temp",
+        "humidity",
+        "clouds",
+        "wind_speed",
+    ]
+
+    if data_type not in ("forecast", "historical"):
+        raise ValueError(f"Invalid data type: {data_type}")
+
+    with open("./configs/weather_api.json", "r", encoding="utf-8") as f:
+        WEATHER_CONFIG = json.loads(f.read())
+
+    base_params = dict(
+        lat=WEATHER_CONFIG["latitude"],
+        lon=WEATHER_CONFIG["longitude"],
+        units="metric",
+        appid=WEATHER_CONFIG["api_key"],
+    )
+
+    try:
+        while True:
+            try:
+                cur_time = int(time.time())
+
+                if data_type == "forecast":
+                    res = requests.get(
+                        "https://api.openweathermap.org/data/2.5/onecall",
+                        params=dict(
+                            exclude=["current", "minutely", "daily", "alerts"],
+                            **base_params,
+                        ),
+                    )
+                elif data_type == "historical":
+                    res = requests.get(
+                        "https://api.openweathermap.org/data/2.5/onecall/timemachine",
+                        params=dict(
+                            type="hour",
+                            dt=cur_time - API_CALL_FREQUENCY_S,
+                            **base_params,
+                        ),
+                    )
+                else:
+                    assert False
+
+                res.raise_for_status()
+
+                weather_data = res.json()
+
+                if data_type == "forecast":
+                    assert len(weather_data["hourly"]) == 48
+                    for forecast_type, hourly_data in (
+                        (SensorType.WEATHER_FORECAST_1_HOUR, weather_data["hourly"][0]),
+                        (SensorType.WEATHER_FORECAST_3_HOUR, weather_data["hourly"][2]),
+                        (
+                            SensorType.WEATHER_FORECAST_12_HOUR,
+                            weather_data["hourly"][11],
+                        ),
+                        (
+                            SensorType.WEATHER_FORECAST_24_HOUR,
+                            weather_data["hourly"][23],
+                        ),
+                        (
+                            SensorType.WEATHER_FORECAST_48_HOUR,
+                            weather_data["hourly"][47],
+                        ),
+                    ):
+                        for key in READING_KEYS:
+                            queue.put(
+                                SensorReading(
+                                    sensor=forecast_type,
+                                    reading_type=ReadingType(f"weather_{key}"),
+                                    reading=hourly_data[key],
+                                )
+                            )
+                elif data_type == "historical":
+                    last_hour_data = weather_data["hourly"][-1]
+                    for key in READING_KEYS:
+                        queue.put(
+                            SensorReading(
+                                sensor=SensorType.WEATHER_HISTORICAL,
+                                reading_type=ReadingType(f"weather_{key}"),
+                                reading=last_hour_data[key],
+                            )
+                        )
+                else:
+                    assert False
+            except Exception as e:
+                logging.info(
+                    f"Encountered an exception getting weather '{data_type}': {repr(e)}"
+                )
+            finally:
+                time.sleep(API_CALL_FREQUENCY_S)
+    except KeyboardInterrupt:
+        return
+
+
 def main():
     SENSOR_PROC_POLL_PERIOD_S = .5
 
@@ -252,8 +373,16 @@ def main():
     atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
+    weather_historical_proc = spawn_ctx.Process(
+        target=get_weather, args=(sensor_reading_queue, "historical")
+    )
+    weather_forecast_proc = spawn_ctx.Process(
+        target=get_weather, args=(sensor_reading_queue, "forecast")
+    )
 
-    sensor_procs = [feather_proc, atlas_color_proc]
+    # TODO : pass
+    # sensor_procs = [feather_proc, atlas_color_proc, weather_historical_proc, weather_forecast_proc]
+    sensor_procs = [atlas_color_proc, weather_historical_proc, weather_forecast_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
