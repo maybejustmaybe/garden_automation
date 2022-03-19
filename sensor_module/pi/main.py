@@ -4,15 +4,26 @@ import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
+from logging.handlers import QueueHandler, QueueListener
 
 import pydantic
+import redis
 import serial
 
 from lib import pyboard
 
+
 logging.basicConfig(
     level=logging.INFO,
 )
+logger = logging.getLogger(__name__)
+
+_log_queue = mp.Queue()
+_log_queue_handler = QueueHandler(_log_queue)
+
+logger.addHandler(_log_queue_handler)
+
+log_listener = QueueListener(_log_queue, logging.StreamHandler())
 
 FEATHER_PORT = "/dev/ttyUSB0"
 FEATHER_BAUD_RATE = 115200
@@ -23,27 +34,8 @@ FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
 FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
 FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 
-# TODO : remove
-# import sys
-# import importlib
-# import importlib.util
-# def load_esptool_module():
-#     ESPTOOL_PATH = Path(sys.exec_prefix) / "bin" / "esptool.py"
-#
-#     esptool_spec = importlib.util.spec_from_file_location("esptool", str(ESPTOOL_PATH))
-#     esptool = importlib.util.module_from_spec(esptool_spec)
-#     esptool_spec.loader.exec_module(esptool)
-#
-#     return esptool
-#
-# esptool = load_esptool_module()
-#
-# def reset_feather():
-#     print("Resetting feather...")
-#     esp_loader = esptool.ESPLoader.detect_chip(port=FEATHER_DEVICE)
-#     esp_loader.soft_reset(True)
-#     print("Reset feather.")
-
+REDIS_PORT = 7661
+REDIS_RETENTION_MS = 30 * 60 * 1000
 
 class SensorType(enum.Enum):
     SHT30 = "sht30"
@@ -59,13 +51,19 @@ class ReadingType(enum.Enum):
     GREEN = "green"
     BLUE = "blue"
 
+SENSOR_TYPE_TO_READING_TYPES = {
+    SensorType.SHT30: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
+    SensorType.AHTX0: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
+    SensorType.ATLAS_COLOR: (ReadingType.LUX, ReadingType.RED, ReadingType.GREEN, ReadingType.BLUE),
+}
+
 
 class SensorReading(pydantic.BaseModel):
-    sensor: SensorType
+    sensor_type: SensorType
     # TODO : consider adding this back for monitoring purposes
     # tick_diff: int
     reading_type: ReadingType
-    reading: float
+    value: float
 
 
 def read_feather_sensors(queue):
@@ -139,7 +137,7 @@ else:
         except KeyboardInterrupt:
             return
     finally:
-        logging.info("Cleaning up feather.")
+        logging.info("Cleaning up feather...")
         feather_pyboard.exit_raw_repl()
         feather_pyboard.close()
 
@@ -179,9 +177,9 @@ def read_atlas_color_sensor(queue):
         ):
             queue.put(
                 SensorReading(
-                    sensor=SensorType.ATLAS_COLOR,
+                    sensor_type=SensorType.ATLAS_COLOR,
                     reading_type=reading_type,
-                    reading=value,
+                    value=value,
                 )
             )
 
@@ -192,7 +190,7 @@ def read_atlas_color_sensor(queue):
                     raw.decode("utf-8")
                 )
             )
-
+        
         if raw == b"*OK\r" or raw == b"\x00\r":
             return
 
@@ -210,46 +208,93 @@ def read_atlas_color_sensor(queue):
                 time.sleep(max(0, (SERIAL_READ_PERIOD_MS - loop_duration_ms) / 1000))
     except KeyboardInterrupt:
         return
+    finally:
+        logging.info("Cleaning up atlas color sensor...")
+        atlas_color_serial.close()
+
+def publish_sensor_readings(sensor_reading_queue):
+    redis_client = redis.Redis(host="localhost", port=REDIS_PORT)
+
+    for sensor_type, reading_types in SENSOR_TYPE_TO_READING_TYPES.items():
+        for r_type in reading_types:
+            try:
+                redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
+            except redis.exceptions.ResponseError as e:
+                if e.args[0] == "TSDB: key already exists":
+                    continue
+                
+                raise
+
+    try:
+        logging.info("Publishing sensor readings...")
+
+        # TODO : consider optimizing this with a pipeline
+        while True:
+            reading = sensor_reading_queue.get(block=True)
+
+            redis_client.ts().add(f"sensor_readings.{reading.sensor_type.value}.{reading.reading_type.value}", "*", reading.value)
+            
+    except KeyboardInterrupt:
+        return
+    finally:
+        logging.info("Cleaning up redis client...")
+        redis_client.close()
 
 
 def main():
-    mp.set_start_method("forkserver")
+    SENSOR_PROC_POLL_PERIOD_S = .5
 
-    sensor_reading_queue = mp.Queue()
-    feather_proc = mp.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
-    atlas_color_proc = mp.Process(
+    spawn_ctx = mp.get_context("forkserver")
+
+    sensor_reading_queue = spawn_ctx.Queue()
+    publish_proc = spawn_ctx.Process(target=publish_sensor_readings, args=(sensor_reading_queue,))
+    feather_proc = spawn_ctx.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
+    atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
 
-    procs = [feather_proc, atlas_color_proc]
+    sensor_procs = [feather_proc, atlas_color_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
 
-        for p in procs:
+        for p in sensor_procs:
             p.start()
 
-        logging.info("Gathering data from processes...")
-        while True:
-            while not sensor_reading_queue.empty():
-                reading = sensor_reading_queue.get()
-                print(reading.json())
+        try:
+            publish_proc.start()
 
-            for p in procs:
-                if p.is_alive():
+            logging.info("Gathering data from processes...")
+
+            while True:
+                procs_alive = True
+                for p in sensor_procs:
+                    if not p.is_alive():
+                        procs_alive = False
+                        break
+                
+                if not procs_alive:
                     break
-            else:
-                break
+
+                time.sleep(SENSOR_PROC_POLL_PERIOD_S)
+        finally:
+            publish_proc.terminate()
+            publish_proc.join()
     except KeyboardInterrupt:
         pass
     finally:
         logging.info("Shutting down processes.")
-        for p in procs:
+        for p in sensor_procs:
             if p.pid is not None:
+                p.terminate()
                 p.join()
 
     logging.info("Exiting.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        log_listener.start()
+        main()
+    finally:
+        log_listener.stop()
