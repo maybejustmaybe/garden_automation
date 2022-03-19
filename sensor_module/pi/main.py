@@ -337,7 +337,7 @@ def get_weather(queue, data_type):
                                 SensorReading(
                                     sensor=forecast_type,
                                     reading_type=ReadingType(f"weather_{key}"),
-                                    reading=hourly_data[key],
+                                    value=hourly_data[key],
                                 )
                             )
                 elif data_type == "historical":
@@ -347,7 +347,7 @@ def get_weather(queue, data_type):
                             SensorReading(
                                 sensor=SensorType.WEATHER_HISTORICAL,
                                 reading_type=ReadingType(f"weather_{key}"),
-                                reading=last_hour_data[key],
+                                value=last_hour_data[key],
                             )
                         )
                 else:
