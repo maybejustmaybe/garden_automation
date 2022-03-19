@@ -335,7 +335,7 @@ def get_weather(queue, data_type):
                         for key in READING_KEYS:
                             queue.put(
                                 SensorReading(
-                                    sensor=forecast_type,
+                                    sensor_type=forecast_type,
                                     reading_type=ReadingType(f"weather_{key}"),
                                     value=hourly_data[key],
                                 )
@@ -345,7 +345,7 @@ def get_weather(queue, data_type):
                     for key in READING_KEYS:
                         queue.put(
                             SensorReading(
-                                sensor=SensorType.WEATHER_HISTORICAL,
+                                sensor_type=SensorType.WEATHER_HISTORICAL,
                                 reading_type=ReadingType(f"weather_{key}"),
                                 value=last_hour_data[key],
                             )
