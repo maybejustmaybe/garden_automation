@@ -3,15 +3,12 @@ import json
 import logging
 import multiprocessing as mp
 import time
-from pathlib import Path
 from logging.handlers import QueueHandler, QueueListener
 
 import pydantic
 import redis
 import serial
 import requests
-
-from lib import pyboard
 
 
 logging.basicConfig(
@@ -26,15 +23,8 @@ logger.addHandler(_log_queue_handler)
 
 log_listener = QueueListener(_log_queue, logging.StreamHandler())
 
-# TODO
-# FEATHER_PORT = "/dev/ttyUSB0"
-# FEATHER_BAUD_RATE = 115200
 ATLAS_COLOR_PORT = "/dev/ttyUSB0"
 ATLAS_COLOR_BAUD_RATE = 9600
-
-FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
-FEATHER_MAIN_PATH = FEATHER_DIR_PATH / "main.py"
-FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 
 REDIS_PORT = 7661
 REDIS_RETENTION_MS = 30 * 60 * 1000
@@ -99,81 +89,6 @@ class SensorReading(pydantic.BaseModel):
     # tick_diff: int
     reading_type: ReadingType
     value: float
-
-
-def read_feather_sensors(queue):
-    FEATHER_ENTER_REPL_NUM_RETRIES = 3
-
-    _output_chunks = list()
-
-    def on_feather_data(readings_json):
-        readings_list = json.loads(readings_json)
-        for reading_dict in readings_list:
-            queue.put(SensorReading(**reading_dict))
-
-    def on_feather_output(raw):
-        chunk = raw.decode("utf-8", errors="replace")
-        split_chunks = chunk.split("\n")
-
-        if len(split_chunks) > 1:
-            on_feather_data("".join([*_output_chunks, split_chunks[0]]))
-            for line_chunk in split_chunks[1:-1]:
-                on_feather_data(line_chunk)
-
-            _output_chunks.clear()
-            _output_chunks.append(split_chunks[-1])
-        else:
-            _output_chunks.append(split_chunks[0])
-
-    logging.info("Initializing feather...")
-    feather_pyboard = pyboard.Pyboard(FEATHER_PORT, FEATHER_BAUD_RATE)
-    try:
-        for enter_repl_attempt in range(1, FEATHER_ENTER_REPL_NUM_RETRIES + 1):
-            try:
-                feather_pyboard.enter_raw_repl()
-            except pyboard.PyboardError:
-                pass
-            else:
-                if enter_repl_attempt != 1:
-                    logging.warn(
-                        f"Entering repl on feather took {enter_repl_attempt} attempts"
-                    )
-                break
-        else:
-            raise RuntimeError("Feather failed to enter repl")
-
-        logging.info("Removing and reputting feather libs...")
-        feather_pyboard.exec(
-            """
-import os
-try:
-    os.stat("/lib")
-except FileNotFoundError:
-    os.mkdir("/lib")
-else:
-    for path in os.listdir("/lib"):
-        os.remove("/lib/{}".format(path))
-"""
-        )
-
-        for lib_path in FEATHER_LIB_DIR_PATH.iterdir():
-            assert lib_path.is_file()
-            feather_pyboard.fs_put(lib_path, f"/lib/{lib_path.name}")
-
-        with open(FEATHER_MAIN_PATH, "r", encoding="utf-8") as f:
-            feather_main_contents = f.read()
-
-        logging.info("Feather initialization complete.")
-
-        logging.info("Exec-ing feather main program...")
-        try:
-            feather_pyboard.exec(feather_main_contents, data_consumer=on_feather_output)
-        except KeyboardInterrupt:
-            return
-    finally:
-        logging.info("Cleaning up feather...")
-        feather_pyboard.exit_raw_repl()
-        feather_pyboard.close()
 
 
 def read_atlas_color_sensor(queue):
@@ -425,9 +340,6 @@ def main():
     publish_proc = spawn_ctx.Process(
         target=publish_sensor_readings, args=(sensor_reading_queue,)
     )
-    feather_proc = spawn_ctx.Process(
-        target=read_feather_sensors, args=(sensor_reading_queue,)
-    )
     atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
@@ -438,8 +350,6 @@ def main():
         target=get_weather, args=(sensor_reading_queue, "forecast")
     )
 
-    # TODO : pass
-    # sensor_procs = [feather_proc, atlas_color_proc, weather_historical_proc, weather_forecast_proc]
     sensor_procs = [atlas_color_proc, weather_historical_proc, weather_forecast_proc]
 
     try:
