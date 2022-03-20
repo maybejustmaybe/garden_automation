@@ -40,6 +40,7 @@ FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 REDIS_PORT = 7661
 REDIS_RETENTION_MS = 30 * 60 * 1000
 
+
 class SensorType(enum.Enum):
     SHT30 = "sht30"
     AHTX0 = "ahtx0"
@@ -64,10 +65,16 @@ class ReadingType(enum.Enum):
     WEATHER_CLOUDS = "weather_clouds"
     WEATHER_WIND_SPEED = "weather_wind_speed"
 
+
 SENSOR_TYPE_TO_READING_TYPES = {
     SensorType.SHT30: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
     SensorType.AHTX0: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
-    SensorType.ATLAS_COLOR: (ReadingType.LUX, ReadingType.RED, ReadingType.GREEN, ReadingType.BLUE),
+    SensorType.ATLAS_COLOR: (
+        ReadingType.LUX,
+        ReadingType.RED,
+        ReadingType.GREEN,
+        ReadingType.BLUE,
+    ),
 }
 
 
@@ -94,7 +101,6 @@ def read_feather_sensors(queue):
         split_chunks = chunk.split("\n")
 
         if len(split_chunks) > 1:
-            # TODO : send data back on queue
             on_feather_data("".join([*_output_chunks, split_chunks[0]]))
             for line_chunk in split_chunks[1:-1]:
                 on_feather_data(line_chunk)
@@ -210,7 +216,7 @@ def read_atlas_color_sensor(queue):
                     raw.decode("utf-8")
                 )
             )
-        
+
         if raw == b"*OK\r" or raw == b"\x00\r":
             return
 
@@ -232,39 +238,9 @@ def read_atlas_color_sensor(queue):
         logging.info("Cleaning up atlas color sensor...")
         atlas_color_serial.close()
 
-def publish_sensor_readings(sensor_reading_queue):
-    redis_client = redis.Redis(host="localhost", port=REDIS_PORT)
-
-    for sensor_type, reading_types in SENSOR_TYPE_TO_READING_TYPES.items():
-        for r_type in reading_types:
-            try:
-                redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
-            except redis.exceptions.ResponseError as e:
-                if e.args[0] == "TSDB: key already exists":
-                    continue
-                
-                raise
-
-    try:
-        logging.info("Publishing sensor readings...")
-
-        # TODO : consider optimizing this with a pipeline
-        while True:
-            reading = sensor_reading_queue.get(block=True)
-
-            redis_client.ts().add(f"sensor_readings.{reading.sensor_type.value}.{reading.reading_type.value}", "*", reading.value)
-            
-    except KeyboardInterrupt:
-        return
-    finally:
-        logging.info("Cleaning up redis client...")
-        redis_client.close()
-
 
 def get_weather(queue, data_type):
-    # TODO
-    # API_CALL_FREQUENCY_S = 60 * 60
-    API_CALL_FREQUENCY_S = 10 
+    API_CALL_FREQUENCY_S = 60 * 60
     READING_KEYS = [
         "temp",
         "humidity",
@@ -362,14 +338,54 @@ def get_weather(queue, data_type):
         return
 
 
+def publish_sensor_readings(sensor_reading_queue):
+    redis_client = redis.Redis(host="localhost", port=REDIS_PORT)
+
+    for sensor_type, reading_types in SENSOR_TYPE_TO_READING_TYPES.items():
+        for r_type in reading_types:
+            try:
+                redis_client.ts().create(
+                    f"sensor_readings.{sensor_type.value}.{r_type.value}",
+                    retension_msecs=REDIS_RETENTION_MS,
+                )
+            except redis.exceptions.ResponseError as e:
+                if e.args[0] == "TSDB: key already exists":
+                    continue
+
+                raise
+
+    try:
+        logging.info("Publishing sensor readings...")
+
+        # TODO : consider optimizing this with a pipeline
+        while True:
+            reading = sensor_reading_queue.get(block=True)
+
+            redis_client.ts().add(
+                f"sensor_readings.{reading.sensor_type.value}.{reading.reading_type.value}",
+                "*",
+                reading.value,
+            )
+
+    except KeyboardInterrupt:
+        return
+    finally:
+        logging.info("Cleaning up redis client...")
+        redis_client.close()
+
+
 def main():
-    SENSOR_PROC_POLL_PERIOD_S = .5
+    SENSOR_PROC_POLL_PERIOD_S = 0.5
 
     spawn_ctx = mp.get_context("forkserver")
 
     sensor_reading_queue = spawn_ctx.Queue()
-    publish_proc = spawn_ctx.Process(target=publish_sensor_readings, args=(sensor_reading_queue,))
-    feather_proc = spawn_ctx.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
+    publish_proc = spawn_ctx.Process(
+        target=publish_sensor_readings, args=(sensor_reading_queue,)
+    )
+    feather_proc = spawn_ctx.Process(
+        target=read_feather_sensors, args=(sensor_reading_queue,)
+    )
     atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
@@ -401,7 +417,7 @@ def main():
                     if not p.is_alive():
                         procs_alive = False
                         break
-                
+
                 if not procs_alive:
                     break
 
