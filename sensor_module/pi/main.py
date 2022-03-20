@@ -9,6 +9,7 @@ from logging.handlers import QueueHandler, QueueListener
 import pydantic
 import redis
 import serial
+import requests
 
 from lib import pyboard
 
@@ -25,9 +26,10 @@ logger.addHandler(_log_queue_handler)
 
 log_listener = QueueListener(_log_queue, logging.StreamHandler())
 
-FEATHER_PORT = "/dev/ttyUSB0"
-FEATHER_BAUD_RATE = 115200
-ATLAS_COLOR_PORT = "/dev/ttyUSB1"
+# TODO
+# FEATHER_PORT = "/dev/ttyUSB0"
+# FEATHER_BAUD_RATE = 115200
+ATLAS_COLOR_PORT = "/dev/ttyUSB0"
 ATLAS_COLOR_BAUD_RATE = 9600
 
 FEATHER_DIR_PATH = Path(__file__).resolve().parents[1] / "feather"
@@ -37,10 +39,17 @@ FEATHER_LIB_DIR_PATH = FEATHER_DIR_PATH / "lib"
 REDIS_PORT = 7661
 REDIS_RETENTION_MS = 30 * 60 * 1000
 
+
 class SensorType(enum.Enum):
     SHT30 = "sht30"
     AHTX0 = "ahtx0"
     ATLAS_COLOR = "atlas_color"
+    WEATHER_FORECAST_1_HOUR = "weather_forecast_1_hour"
+    WEATHER_FORECAST_3_HOUR = "weather_forecast_3_hour"
+    WEATHER_FORECAST_12_HOUR = "weather_forecast_12_hour"
+    WEATHER_FORECAST_24_HOUR = "weather_forecast_24_hour"
+    WEATHER_FORECAST_48_HOUR = "weather_forecast_48_hour"
+    WEATHER_HISTORICAL = "weather_historical"
 
 
 class ReadingType(enum.Enum):
@@ -50,11 +59,37 @@ class ReadingType(enum.Enum):
     RED = "red"
     GREEN = "green"
     BLUE = "blue"
+    WEATHER_TEMP = "weather_temp"
+    WEATHER_HUMIDITY = "weather_humidity"
+    WEATHER_CLOUDS = "weather_clouds"
+    WEATHER_WIND_SPEED = "weather_wind_speed"
+    WEATHER_RAIN = "weather_rain"
+
+
+_WEATHER_READING_TYPES = [
+    ReadingType.WEATHER_TEMP,
+    ReadingType.WEATHER_HUMIDITY,
+    ReadingType.WEATHER_CLOUDS,
+    ReadingType.WEATHER_WIND_SPEED,
+    ReadingType.WEATHER_RAIN,
+]
+
 
 SENSOR_TYPE_TO_READING_TYPES = {
     SensorType.SHT30: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
     SensorType.AHTX0: (ReadingType.TEMPERATURE, ReadingType.HUMIDITY),
-    SensorType.ATLAS_COLOR: (ReadingType.LUX, ReadingType.RED, ReadingType.GREEN, ReadingType.BLUE),
+    SensorType.ATLAS_COLOR: (
+        ReadingType.LUX,
+        ReadingType.RED,
+        ReadingType.GREEN,
+        ReadingType.BLUE,
+    ),
+    SensorType.WEATHER_FORECAST_1_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_3_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_12_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_24_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_48_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_HISTORICAL: _WEATHER_READING_TYPES,
 }
 
 
@@ -81,7 +116,6 @@ def read_feather_sensors(queue):
         split_chunks = chunk.split("\n")
 
         if len(split_chunks) > 1:
-            # TODO : send data back on queue
             on_feather_data("".join([*_output_chunks, split_chunks[0]]))
             for line_chunk in split_chunks[1:-1]:
                 on_feather_data(line_chunk)
@@ -161,11 +195,18 @@ def read_atlas_color_sensor(queue):
 
     def on_sensor_data(reading_tuple):
         if len(reading_tuple) != 5:
-            raise RuntimeError(
-                "Unexpected number of readings from atlas color sensor: '{}'".format(
+            # TODO :  decide if this should be an error
+            # raise RuntimeError(
+            #     "Unexpected number of readings from atlas color sensor: '{}'".format(
+            #         ",".join(reading_tuple)
+            #     )
+            # )
+            logging.error(
+                "Unexpected number of readings from atlas color sensor, skipping (reading): '{}'".format(
                     ",".join(reading_tuple)
                 )
             )
+            return
 
         red_value, green_value, blue_value, lux_sentinel, lux_value = reading_tuple
 
@@ -190,7 +231,7 @@ def read_atlas_color_sensor(queue):
                     raw.decode("utf-8")
                 )
             )
-        
+
         if raw == b"*OK\r" or raw == b"\x00\r":
             return
 
@@ -201,7 +242,7 @@ def read_atlas_color_sensor(queue):
             loop_start = time.monotonic()
 
             try:
-                while (raw := atlas_color_serial.read_until(b"\r")) != b'':
+                while (raw := atlas_color_serial.read_until(b"\r")) != b"":
                     on_sensor_output(raw)
             finally:
                 loop_duration_ms = time.monotonic() - loop_start
@@ -212,17 +253,146 @@ def read_atlas_color_sensor(queue):
         logging.info("Cleaning up atlas color sensor...")
         atlas_color_serial.close()
 
+
+def get_weather(queue, data_type):
+    API_CALL_FREQUENCY_S = 60 * 60
+    READING_KEYS = [
+        "temp",
+        "humidity",
+        "clouds",
+        "wind_speed",
+        "rain",
+    ]
+    READING_KEY_TO_DEFAULT = {"rain": 0}
+
+    if data_type not in ("forecast", "historical"):
+        raise ValueError(f"Invalid data type: {data_type}")
+
+    with open("./configs/weather_api.json", "r", encoding="utf-8") as f:
+        WEATHER_CONFIG = json.loads(f.read())
+
+    base_params = dict(
+        lat=WEATHER_CONFIG["latitude"],
+        lon=WEATHER_CONFIG["longitude"],
+        units="metric",
+        appid=WEATHER_CONFIG["api_key"],
+    )
+
+    try:
+        while True:
+            try:
+                cur_time = int(time.time())
+
+                if data_type == "forecast":
+                    res = requests.get(
+                        "https://api.openweathermap.org/data/2.5/onecall",
+                        params=dict(
+                            exclude=["current", "minutely", "daily", "alerts"],
+                            **base_params,
+                        ),
+                    )
+                elif data_type == "historical":
+                    res = requests.get(
+                        "https://api.openweathermap.org/data/2.5/onecall/timemachine",
+                        params=dict(
+                            type="hour",
+                            dt=cur_time - API_CALL_FREQUENCY_S,
+                            **base_params,
+                        ),
+                    )
+                else:
+                    assert False
+
+                res.raise_for_status()
+
+                weather_data = res.json()
+
+                if data_type == "forecast":
+                    assert len(weather_data["hourly"]) == 48
+                    for forecast_type, hourly_data in (
+                        (SensorType.WEATHER_FORECAST_1_HOUR, weather_data["hourly"][0]),
+                        (SensorType.WEATHER_FORECAST_3_HOUR, weather_data["hourly"][2]),
+                        (
+                            SensorType.WEATHER_FORECAST_12_HOUR,
+                            weather_data["hourly"][11],
+                        ),
+                        (
+                            SensorType.WEATHER_FORECAST_24_HOUR,
+                            weather_data["hourly"][23],
+                        ),
+                        (
+                            SensorType.WEATHER_FORECAST_48_HOUR,
+                            weather_data["hourly"][47],
+                        ),
+                    ):
+                        for key in READING_KEYS:
+                            value = hourly_data.get(key)
+                            if value is None:
+                                default = READING_KEY_TO_DEFAULT.get(key)
+                                if default is not None:
+                                    value = default
+                                else:
+                                    raise RuntimeError(
+                                        "Reading key missing from data: {key}"
+                                    )
+
+                                assert value is not None
+                            queue.put(
+                                SensorReading(
+                                    sensor_type=forecast_type,
+                                    reading_type=ReadingType(f"weather_{key}"),
+                                    value=value,
+                                )
+                            )
+                elif data_type == "historical":
+                    last_hour_data = weather_data["hourly"][-1]
+                    for key in READING_KEYS:
+                        value = last_hour_data.get(key)
+                        if value is None:
+                            default = READING_KEY_TO_DEFAULT.get(key)
+                            if default is not None:
+                                value = default
+                            else:
+                                raise RuntimeError(
+                                    "Reading key missing from data: {key}"
+                                )
+
+                        assert value is not None
+
+                        queue.put(
+                            SensorReading(
+                                sensor_type=SensorType.WEATHER_HISTORICAL,
+                                reading_type=ReadingType(f"weather_{key}"),
+                                value=value,
+                            )
+                        )
+                else:
+                    assert False
+            except Exception as e:
+                # TODO : narrow exception case
+                logging.error(
+                    f"Encountered an exception getting weather '{data_type}': {repr(e)}"
+                )
+            finally:
+                time.sleep(API_CALL_FREQUENCY_S)
+    except KeyboardInterrupt:
+        return
+
+
 def publish_sensor_readings(sensor_reading_queue):
     redis_client = redis.Redis(host="localhost", port=REDIS_PORT)
 
     for sensor_type, reading_types in SENSOR_TYPE_TO_READING_TYPES.items():
         for r_type in reading_types:
             try:
-                redis_client.ts().create(f"sensor_readings.{sensor_type.value}.{r_type.value}", retension_msecs=REDIS_RETENTION_MS)
+                redis_client.ts().create(
+                    f"sensor_readings.{sensor_type.value}.{r_type.value}",
+                    retension_msecs=REDIS_RETENTION_MS,
+                )
             except redis.exceptions.ResponseError as e:
                 if e.args[0] == "TSDB: key already exists":
                     continue
-                
+
                 raise
 
     try:
@@ -232,8 +402,12 @@ def publish_sensor_readings(sensor_reading_queue):
         while True:
             reading = sensor_reading_queue.get(block=True)
 
-            redis_client.ts().add(f"sensor_readings.{reading.sensor_type.value}.{reading.reading_type.value}", "*", reading.value)
-            
+            redis_client.ts().add(
+                f"sensor_readings.{reading.sensor_type.value}.{reading.reading_type.value}",
+                "*",
+                reading.value,
+            )
+
     except KeyboardInterrupt:
         return
     finally:
@@ -242,18 +416,31 @@ def publish_sensor_readings(sensor_reading_queue):
 
 
 def main():
-    SENSOR_PROC_POLL_PERIOD_S = .5
+    SENSOR_PROC_POLL_PERIOD_S = 0.5
 
     spawn_ctx = mp.get_context("forkserver")
 
     sensor_reading_queue = spawn_ctx.Queue()
-    publish_proc = spawn_ctx.Process(target=publish_sensor_readings, args=(sensor_reading_queue,))
-    feather_proc = spawn_ctx.Process(target=read_feather_sensors, args=(sensor_reading_queue,))
+
+    publish_proc = spawn_ctx.Process(
+        target=publish_sensor_readings, args=(sensor_reading_queue,)
+    )
+    feather_proc = spawn_ctx.Process(
+        target=read_feather_sensors, args=(sensor_reading_queue,)
+    )
     atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
+    weather_historical_proc = spawn_ctx.Process(
+        target=get_weather, args=(sensor_reading_queue, "historical")
+    )
+    weather_forecast_proc = spawn_ctx.Process(
+        target=get_weather, args=(sensor_reading_queue, "forecast")
+    )
 
-    sensor_procs = [feather_proc, atlas_color_proc]
+    # TODO : pass
+    # sensor_procs = [feather_proc, atlas_color_proc, weather_historical_proc, weather_forecast_proc]
+    sensor_procs = [atlas_color_proc, weather_historical_proc, weather_forecast_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
@@ -272,7 +459,7 @@ def main():
                     if not p.is_alive():
                         procs_alive = False
                         break
-                
+
                 if not procs_alive:
                     break
 
