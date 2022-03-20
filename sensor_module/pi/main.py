@@ -423,10 +423,6 @@ def main():
 
     sensor_reading_queue = spawn_ctx.Queue()
 
-    # TODO : remove
-    get_weather(sensor_reading_queue, "forecast")
-    return
-
     publish_proc = spawn_ctx.Process(
         target=publish_sensor_readings, args=(sensor_reading_queue,)
     )
