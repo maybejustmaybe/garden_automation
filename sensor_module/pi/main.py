@@ -310,19 +310,18 @@ def get_weather(queue, data_type):
                             weather_data["hourly"][47],
                         ),
                     ):
-                        value = hourly_data.get(key)
-                        if value is None:
-                            default = READING_KEY_TO_DEFAULT.get(key)
-                            if default is not None:
-                                value = default
-                            else:
-                                raise RuntimeError(
-                                    "Reading key missing from data: {key}"
-                                )
-
-                            assert value is not None
-
                         for key in READING_KEYS:
+                            value = hourly_data.get(key)
+                            if value is None:
+                                default = READING_KEY_TO_DEFAULT.get(key)
+                                if default is not None:
+                                    value = default
+                                else:
+                                    raise RuntimeError(
+                                        "Reading key missing from data: {key}"
+                                    )
+
+                                assert value is not None
                             queue.put(
                                 SensorReading(
                                     sensor_type=forecast_type,
