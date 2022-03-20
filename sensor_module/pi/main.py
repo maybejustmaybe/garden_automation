@@ -64,6 +64,16 @@ class ReadingType(enum.Enum):
     WEATHER_HUMIDITY = "weather_humidity"
     WEATHER_CLOUDS = "weather_clouds"
     WEATHER_WIND_SPEED = "weather_wind_speed"
+    WEATHER_RAIN = "weather_rain"
+
+
+_WEATHER_READING_TYPES = [
+    ReadingType.WEATHER_TEMP,
+    ReadingType.WEATHER_HUMIDITY,
+    ReadingType.WEATHER_CLOUDS,
+    ReadingType.WEATHER_WIND_SPEED,
+    ReadingType.WEATHER_RAIN,
+]
 
 
 SENSOR_TYPE_TO_READING_TYPES = {
@@ -75,6 +85,12 @@ SENSOR_TYPE_TO_READING_TYPES = {
         ReadingType.GREEN,
         ReadingType.BLUE,
     ),
+    SensorType.WEATHER_FORECAST_1_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_3_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_12_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_24_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_FORECAST_48_HOUR: _WEATHER_READING_TYPES,
+    SensorType.WEATHER_HISTORICAL: _WEATHER_READING_TYPES,
 }
 
 
