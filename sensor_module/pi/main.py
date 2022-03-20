@@ -2,7 +2,6 @@ import enum
 import json
 import logging
 import multiprocessing as mp
-from multiprocessing.sharedctypes import Value
 import time
 from pathlib import Path
 from logging.handlers import QueueHandler, QueueListener
@@ -308,6 +307,10 @@ def get_weather(queue, data_type):
                             weather_data["hourly"][47],
                         ),
                     ):
+                        # TODO : remove
+                        import pdb; pdb.set_trace()
+                        pass
+
                         for key in READING_KEYS:
                             queue.put(
                                 SensorReading(
