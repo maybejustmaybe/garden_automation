@@ -1,4 +1,5 @@
 import enum
+from gzip import READ
 import json
 import logging
 import multiprocessing as mp
@@ -245,7 +246,9 @@ def get_weather(queue, data_type):
         "humidity",
         "clouds",
         "wind_speed",
+        "rain",
     ]
+    READING_KEY_TO_DEFAULT = {"rain": 0}
 
     if data_type not in ("forecast", "historical"):
         raise ValueError(f"Invalid data type: {data_type}")
@@ -307,32 +310,53 @@ def get_weather(queue, data_type):
                             weather_data["hourly"][47],
                         ),
                     ):
-                        # TODO : remove
-                        import pdb; pdb.set_trace()
-                        pass
+                        value = hourly_data.get(key)
+                        if value is None:
+                            default = READING_KEY_TO_DEFAULT.get(key)
+                            if default is not None:
+                                value = default
+                            else:
+                                raise RuntimeError(
+                                    "Reading key missing from data: {key}"
+                                )
+
+                            assert value is not None
 
                         for key in READING_KEYS:
                             queue.put(
                                 SensorReading(
                                     sensor_type=forecast_type,
                                     reading_type=ReadingType(f"weather_{key}"),
-                                    value=hourly_data[key],
+                                    value=value,
                                 )
                             )
                 elif data_type == "historical":
                     last_hour_data = weather_data["hourly"][-1]
                     for key in READING_KEYS:
+                        value = last_hour_data.get(key)
+                        if value is None:
+                            default = READING_KEY_TO_DEFAULT.get(key)
+                            if default is not None:
+                                value = default
+                            else:
+                                raise RuntimeError(
+                                    "Reading key missing from data: {key}"
+                                )
+
+                        assert value is not None
+
                         queue.put(
                             SensorReading(
                                 sensor_type=SensorType.WEATHER_HISTORICAL,
                                 reading_type=ReadingType(f"weather_{key}"),
-                                value=last_hour_data[key],
+                                value=value,
                             )
                         )
                 else:
                     assert False
             except Exception as e:
-                logging.info(
+                # TODO : narrow exception case
+                logging.error(
                     f"Encountered an exception getting weather '{data_type}': {repr(e)}"
                 )
             finally:
