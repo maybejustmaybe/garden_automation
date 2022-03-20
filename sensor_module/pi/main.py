@@ -1,5 +1,4 @@
 import enum
-from gzip import READ
 import json
 import logging
 import multiprocessing as mp
