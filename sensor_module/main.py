@@ -8,6 +8,7 @@ from logging.handlers import QueueHandler, QueueListener
 import pydantic
 import redis
 import serial
+import smbus
 import requests
 
 
@@ -89,6 +90,65 @@ class SensorReading(pydantic.BaseModel):
     # tick_diff: int
     reading_type: ReadingType
     value: float
+
+def read_sht30_sensor(queue):
+    ADDRESS = 0x44
+    READ_DELAY_S = .1
+    READ_FREQ_S = 3
+    assert READ_FREQ_S >= READ_DELAY_S
+
+    bus = smbus.SMBus(1)
+
+    def _check_crc(data):
+        POLYNOMIAL = 0x131  # P(x) = x^8 + x^5 + x^4 + 1 = 100110001
+
+        # calculates 8-Bit checksum with given polynomial
+        crc = 0xFF
+
+        for b in data[:-1]:
+            crc ^= b
+            for _ in range(8, 0, -1):
+                if crc & 0x80:
+                    crc = (crc << 1) ^ POLYNOMIAL
+                else:
+                    crc <<= 1
+        crc_to_check = data[-1]
+        return crc_to_check == crc
+
+    while True:
+        # Send measurement command, 0x2C(44)
+        #		0x06(06)	High repeatability measurement
+        bus.write_i2c_block_data(ADDRESS, 0x2C, [0x06])
+
+        time.sleep(READ_DELAY_S)
+
+        data = bus.read_i2c_block_data(ADDRESS, 0x00, 6)
+        
+        # NOTE that position 2 and 5 are crc
+        check_res = _check_crc(data[0:3]) and _check_crc(data[3:6])
+        if not check_res:
+            logging.error("Failed crc check for SHT30 sensor, skipping.")
+            continue
+
+        temp = (((data[0] << 8 |  data[1]) * 175) / 0xFFFF) - 45
+        relative_humidity = ((data[3] << 8 | data[4]) * 100.0) / 0xFFFF
+
+        queue.put(
+            SensorReading(
+                sensor_type=SensorType.SHT30,
+                reading_type=ReadingType.TEMPERATURE,
+                value=temp,
+            )
+        )
+        queue.put(
+            SensorReading(
+                sensor_type=SensorType.SHT30,
+                reading_type=ReadingType.HUMIDITY,
+                value=relative_humidity,
+            )
+        )
+
+        time.sleep(READ_FREQ_S - READ_DELAY_S)
 
 
 def read_atlas_color_sensor(queue):
@@ -350,6 +410,7 @@ def main():
         target=get_weather, args=(sensor_reading_queue, "forecast")
     )
 
+    # TODO : add sht30 proc
     sensor_procs = [atlas_color_proc, weather_historical_proc, weather_forecast_proc]
 
     try:
