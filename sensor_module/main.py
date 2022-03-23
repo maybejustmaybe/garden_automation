@@ -91,9 +91,10 @@ class SensorReading(pydantic.BaseModel):
     reading_type: ReadingType
     value: float
 
+
 def read_sht30_sensor(queue):
     ADDRESS = 0x44
-    READ_DELAY_S = .1
+    READ_DELAY_S = 0.1
     READ_FREQ_S = 3
     assert READ_FREQ_S >= READ_DELAY_S
 
@@ -117,20 +118,20 @@ def read_sht30_sensor(queue):
 
     while True:
         # Send measurement command, 0x2C(44)
-        #		0x06(06)	High repeatability measurement
+        # 		0x06(06)	High repeatability measurement
         bus.write_i2c_block_data(ADDRESS, 0x2C, [0x06])
 
         time.sleep(READ_DELAY_S)
 
         data = bus.read_i2c_block_data(ADDRESS, 0x00, 6)
-        
+
         # NOTE that position 2 and 5 are crc
         check_res = _check_crc(data[0:3]) and _check_crc(data[3:6])
         if not check_res:
             logging.error("Failed crc check for SHT30 sensor, skipping.")
             continue
 
-        temp = (((data[0] << 8 |  data[1]) * 175) / 0xFFFF) - 45
+        temp = (((data[0] << 8 | data[1]) * 175) / 0xFFFF) - 45
         relative_humidity = ((data[3] << 8 | data[4]) * 100.0) / 0xFFFF
 
         queue.put(
@@ -253,6 +254,24 @@ def get_weather(queue, data_type):
         appid=WEATHER_CONFIG["api_key"],
     )
 
+    def extract_readings(forecast_type, hourly_data):
+        for k in ("temp", "humidity", "clouds", "wind_speed"):
+            yield SensorReading(
+                sensor_type=forecast_type,
+                reading_type=ReadingType(f"weather_{key}"),
+                value=hourly_data[key],
+            )
+
+        rain = 0
+        if "rain" in hourly_data:
+            rain = hourly_data["rain"]["1h"]
+
+        yield SensorReading(
+            sensor_type=forecast_type,
+            reading_type=ReadingType.WEATHER_RAIN,
+            value=rain,
+        )
+
     try:
         while True:
             try:
@@ -300,47 +319,14 @@ def get_weather(queue, data_type):
                             weather_data["hourly"][47],
                         ),
                     ):
-                        for key in READING_KEYS:
-                            value = hourly_data.get(key)
-                            if value is None:
-                                default = READING_KEY_TO_DEFAULT.get(key)
-                                if default is not None:
-                                    value = default
-                                else:
-                                    raise RuntimeError(
-                                        "Reading key missing from data: {key}"
-                                    )
-
-                                assert value is not None
-                            queue.put(
-                                SensorReading(
-                                    sensor_type=forecast_type,
-                                    reading_type=ReadingType(f"weather_{key}"),
-                                    value=value,
-                                )
-                            )
+                        for reading in extract_readings(forecast_type, hourly_data):
+                            queue.put(reading)
                 elif data_type == "historical":
                     last_hour_data = weather_data["hourly"][-1]
-                    for key in READING_KEYS:
-                        value = last_hour_data.get(key)
-                        if value is None:
-                            default = READING_KEY_TO_DEFAULT.get(key)
-                            if default is not None:
-                                value = default
-                            else:
-                                raise RuntimeError(
-                                    "Reading key missing from data: {key}"
-                                )
-
-                        assert value is not None
-
-                        queue.put(
-                            SensorReading(
-                                sensor_type=SensorType.WEATHER_HISTORICAL,
-                                reading_type=ReadingType(f"weather_{key}"),
-                                value=value,
-                            )
-                        )
+                    for reading in extract_readings(
+                        SensorType.WEATHER_HISTORICAL, last_hour_data
+                    ):
+                        queue.put(reading)
                 else:
                     assert False
             except Exception as e:
