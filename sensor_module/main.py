@@ -364,7 +364,8 @@ def publish_sensor_readings(sensor_reading_queue):
                 "*",
                 reading.value,
             )
-
+    except redis.exceptions.ConnectionError:
+        raise
     except KeyboardInterrupt:
         return
     finally:
@@ -410,7 +411,7 @@ def main():
 
             while True:
                 procs_alive = True
-                for p in sensor_procs:
+                for p in (publish_proc, *sensor_procs):
                     if not p.is_alive():
                         procs_alive = False
                         break
