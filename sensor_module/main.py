@@ -258,8 +258,8 @@ def get_weather(queue, data_type):
         for k in ("temp", "humidity", "clouds", "wind_speed"):
             yield SensorReading(
                 sensor_type=forecast_type,
-                reading_type=ReadingType(f"weather_{key}"),
-                value=hourly_data[key],
+                reading_type=ReadingType(f"weather_{k}"),
+                value=hourly_data[k],
             )
 
         rain = 0
@@ -329,10 +329,9 @@ def get_weather(queue, data_type):
                         queue.put(reading)
                 else:
                     assert False
-            except Exception as e:
-                # TODO : narrow exception case
+            except RuntimeError as e:
                 logging.error(
-                    f"Encountered an exception getting weather '{data_type}': {repr(e)}"
+                    f"Encountered an exception getting weather '{data_type}', skipping: {repr(e)}"
                 )
             finally:
                 time.sleep(API_CALL_FREQUENCY_S)
