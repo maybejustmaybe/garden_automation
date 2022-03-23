@@ -116,40 +116,43 @@ def read_sht30_sensor(queue):
         crc_to_check = data[-1]
         return crc_to_check == crc
 
-    while True:
-        # Send measurement command, 0x2C(44)
-        # 		0x06(06)	High repeatability measurement
-        bus.write_i2c_block_data(ADDRESS, 0x2C, [0x06])
+    try:
+        while True:
+            # Send measurement command, 0x2C(44)
+            # 		0x06(06)	High repeatability measurement
+            bus.write_i2c_block_data(ADDRESS, 0x2C, [0x06])
 
-        time.sleep(READ_DELAY_S)
+            time.sleep(READ_DELAY_S)
 
-        data = bus.read_i2c_block_data(ADDRESS, 0x00, 6)
+            data = bus.read_i2c_block_data(ADDRESS, 0x00, 6)
 
-        # NOTE that position 2 and 5 are crc
-        check_res = _check_crc(data[0:3]) and _check_crc(data[3:6])
-        if not check_res:
-            logging.error("Failed crc check for SHT30 sensor, skipping.")
-            continue
+            # NOTE that position 2 and 5 are crc
+            check_res = _check_crc(data[0:3]) and _check_crc(data[3:6])
+            if not check_res:
+                logging.error("Failed crc check for SHT30 sensor, skipping.")
+                continue
 
-        temp = (((data[0] << 8 | data[1]) * 175) / 0xFFFF) - 45
-        relative_humidity = ((data[3] << 8 | data[4]) * 100.0) / 0xFFFF
+            temp = (((data[0] << 8 | data[1]) * 175) / 0xFFFF) - 45
+            relative_humidity = ((data[3] << 8 | data[4]) * 100.0) / 0xFFFF
 
-        queue.put(
-            SensorReading(
-                sensor_type=SensorType.SHT30,
-                reading_type=ReadingType.TEMPERATURE,
-                value=temp,
+            queue.put(
+                SensorReading(
+                    sensor_type=SensorType.SHT30,
+                    reading_type=ReadingType.TEMPERATURE,
+                    value=temp,
+                )
             )
-        )
-        queue.put(
-            SensorReading(
-                sensor_type=SensorType.SHT30,
-                reading_type=ReadingType.HUMIDITY,
-                value=relative_humidity,
+            queue.put(
+                SensorReading(
+                    sensor_type=SensorType.SHT30,
+                    reading_type=ReadingType.HUMIDITY,
+                    value=relative_humidity,
+                )
             )
-        )
 
-        time.sleep(READ_FREQ_S - READ_DELAY_S)
+            time.sleep(READ_FREQ_S - READ_DELAY_S)
+    except KeyboardInterrupt:
+        return
 
 
 def read_atlas_color_sensor(queue):
@@ -231,15 +234,9 @@ def read_atlas_color_sensor(queue):
 
 
 def get_weather(queue, data_type):
-    API_CALL_FREQUENCY_S = 60 * 60
-    READING_KEYS = [
-        "temp",
-        "humidity",
-        "clouds",
-        "wind_speed",
-        "rain",
-    ]
-    READING_KEY_TO_DEFAULT = {"rain": 0}
+    # TODO : decrease frequency
+    # API_CALL_FREQUENCY_S = 60 * 60
+    API_CALL_FREQUENCY_S = 1 * 60
 
     if data_type not in ("forecast", "historical"):
         raise ValueError(f"Invalid data type: {data_type}")
