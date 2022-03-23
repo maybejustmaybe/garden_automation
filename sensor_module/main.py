@@ -8,7 +8,7 @@ from logging.handlers import QueueHandler, QueueListener
 import pydantic
 import redis
 import serial
-import smbus
+import smbus2
 import requests
 
 
@@ -98,7 +98,7 @@ def read_sht30_sensor(queue):
     READ_FREQ_S = 3
     assert READ_FREQ_S >= READ_DELAY_S
 
-    bus = smbus.SMBus(1)
+    bus = smbus2.SMBus(1)
 
     def _check_crc(data):
         POLYNOMIAL = 0x131  # P(x) = x^8 + x^5 + x^4 + 1 = 100110001
