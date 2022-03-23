@@ -385,6 +385,9 @@ def main():
     publish_proc = spawn_ctx.Process(
         target=publish_sensor_readings, args=(sensor_reading_queue,)
     )
+    sht30_proc = spawn_ctx.Process(
+        target=read_sht30_sensor, args=(sensor_reading_queue,)
+    )
     atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
@@ -395,8 +398,7 @@ def main():
         target=get_weather, args=(sensor_reading_queue, "forecast")
     )
 
-    # TODO : add sht30 proc
-    sensor_procs = [atlas_color_proc, weather_historical_proc, weather_forecast_proc]
+    sensor_procs = [sht30_proc, atlas_color_proc, weather_historical_proc, weather_forecast_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
