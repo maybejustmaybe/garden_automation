@@ -8,6 +8,7 @@ from logging.handlers import QueueHandler, QueueListener
 import pydantic
 import redis
 import serial
+import smbus2
 import requests
 
 
@@ -91,6 +92,69 @@ class SensorReading(pydantic.BaseModel):
     value: float
 
 
+def read_sht30_sensor(queue):
+    ADDRESS = 0x44
+    READ_DELAY_S = 0.1
+    READ_FREQ_S = 3
+    assert READ_FREQ_S >= READ_DELAY_S
+
+    bus = smbus2.SMBus(1)
+
+    def _check_crc(data):
+        POLYNOMIAL = 0x131  # P(x) = x^8 + x^5 + x^4 + 1 = 100110001
+
+        # calculates 8-Bit checksum with given polynomial
+        crc = 0xFF
+
+        for b in data[:-1]:
+            crc ^= b
+            for _ in range(8, 0, -1):
+                if crc & 0x80:
+                    crc = (crc << 1) ^ POLYNOMIAL
+                else:
+                    crc <<= 1
+        crc_to_check = data[-1]
+        return crc_to_check == crc
+
+    try:
+        while True:
+            # Send measurement command, 0x2C(44)
+            # 		0x06(06)	High repeatability measurement
+            bus.write_i2c_block_data(ADDRESS, 0x2C, [0x06])
+
+            time.sleep(READ_DELAY_S)
+
+            data = bus.read_i2c_block_data(ADDRESS, 0x00, 6)
+
+            # NOTE that position 2 and 5 are crc
+            check_res = _check_crc(data[0:3]) and _check_crc(data[3:6])
+            if not check_res:
+                logging.error("Failed crc check for SHT30 sensor, skipping.")
+                continue
+
+            temp = (((data[0] << 8 | data[1]) * 175) / 0xFFFF) - 45
+            relative_humidity = ((data[3] << 8 | data[4]) * 100.0) / 0xFFFF
+
+            queue.put(
+                SensorReading(
+                    sensor_type=SensorType.SHT30,
+                    reading_type=ReadingType.TEMPERATURE,
+                    value=temp,
+                )
+            )
+            queue.put(
+                SensorReading(
+                    sensor_type=SensorType.SHT30,
+                    reading_type=ReadingType.HUMIDITY,
+                    value=relative_humidity,
+                )
+            )
+
+            time.sleep(READ_FREQ_S - READ_DELAY_S)
+    except KeyboardInterrupt:
+        return
+
+
 def read_atlas_color_sensor(queue):
     CONTINUOUS_POLL_PERIOD_CONST_MS = 400
     CONTINUOUS_POLL_MULTIPLIER = 3
@@ -170,15 +234,9 @@ def read_atlas_color_sensor(queue):
 
 
 def get_weather(queue, data_type):
-    API_CALL_FREQUENCY_S = 60 * 60
-    READING_KEYS = [
-        "temp",
-        "humidity",
-        "clouds",
-        "wind_speed",
-        "rain",
-    ]
-    READING_KEY_TO_DEFAULT = {"rain": 0}
+    # TODO : decrease frequency
+    # API_CALL_FREQUENCY_S = 60 * 60
+    API_CALL_FREQUENCY_S = 1 * 60
 
     if data_type not in ("forecast", "historical"):
         raise ValueError(f"Invalid data type: {data_type}")
@@ -192,6 +250,24 @@ def get_weather(queue, data_type):
         units="metric",
         appid=WEATHER_CONFIG["api_key"],
     )
+
+    def extract_readings(forecast_type, hourly_data):
+        for k in ("temp", "humidity", "clouds", "wind_speed"):
+            yield SensorReading(
+                sensor_type=forecast_type,
+                reading_type=ReadingType(f"weather_{k}"),
+                value=hourly_data[k],
+            )
+
+        rain = 0
+        if "rain" in hourly_data:
+            rain = hourly_data["rain"]["1h"]
+
+        yield SensorReading(
+            sensor_type=forecast_type,
+            reading_type=ReadingType.WEATHER_RAIN,
+            value=rain,
+        )
 
     try:
         while True:
@@ -240,53 +316,19 @@ def get_weather(queue, data_type):
                             weather_data["hourly"][47],
                         ),
                     ):
-                        for key in READING_KEYS:
-                            value = hourly_data.get(key)
-                            if value is None:
-                                default = READING_KEY_TO_DEFAULT.get(key)
-                                if default is not None:
-                                    value = default
-                                else:
-                                    raise RuntimeError(
-                                        "Reading key missing from data: {key}"
-                                    )
-
-                                assert value is not None
-                            queue.put(
-                                SensorReading(
-                                    sensor_type=forecast_type,
-                                    reading_type=ReadingType(f"weather_{key}"),
-                                    value=value,
-                                )
-                            )
+                        for reading in extract_readings(forecast_type, hourly_data):
+                            queue.put(reading)
                 elif data_type == "historical":
                     last_hour_data = weather_data["hourly"][-1]
-                    for key in READING_KEYS:
-                        value = last_hour_data.get(key)
-                        if value is None:
-                            default = READING_KEY_TO_DEFAULT.get(key)
-                            if default is not None:
-                                value = default
-                            else:
-                                raise RuntimeError(
-                                    "Reading key missing from data: {key}"
-                                )
-
-                        assert value is not None
-
-                        queue.put(
-                            SensorReading(
-                                sensor_type=SensorType.WEATHER_HISTORICAL,
-                                reading_type=ReadingType(f"weather_{key}"),
-                                value=value,
-                            )
-                        )
+                    for reading in extract_readings(
+                        SensorType.WEATHER_HISTORICAL, last_hour_data
+                    ):
+                        queue.put(reading)
                 else:
                     assert False
-            except Exception as e:
-                # TODO : narrow exception case
+            except RuntimeError as e:
                 logging.error(
-                    f"Encountered an exception getting weather '{data_type}': {repr(e)}"
+                    f"Encountered an exception getting weather '{data_type}', skipping: {repr(e)}"
                 )
             finally:
                 time.sleep(API_CALL_FREQUENCY_S)
@@ -322,7 +364,8 @@ def publish_sensor_readings(sensor_reading_queue):
                 "*",
                 reading.value,
             )
-
+    except redis.exceptions.ConnectionError:
+        raise
     except KeyboardInterrupt:
         return
     finally:
@@ -340,6 +383,9 @@ def main():
     publish_proc = spawn_ctx.Process(
         target=publish_sensor_readings, args=(sensor_reading_queue,)
     )
+    sht30_proc = spawn_ctx.Process(
+        target=read_sht30_sensor, args=(sensor_reading_queue,)
+    )
     atlas_color_proc = spawn_ctx.Process(
         target=read_atlas_color_sensor, args=(sensor_reading_queue,)
     )
@@ -350,7 +396,7 @@ def main():
         target=get_weather, args=(sensor_reading_queue, "forecast")
     )
 
-    sensor_procs = [atlas_color_proc, weather_historical_proc, weather_forecast_proc]
+    sensor_procs = [sht30_proc, atlas_color_proc, weather_historical_proc, weather_forecast_proc]
 
     try:
         logging.info("Starting sensor reading gathering processes...")
@@ -365,7 +411,7 @@ def main():
 
             while True:
                 procs_alive = True
-                for p in sensor_procs:
+                for p in (publish_proc, *sensor_procs):
                     if not p.is_alive():
                         procs_alive = False
                         break
