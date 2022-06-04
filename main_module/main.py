@@ -5,6 +5,7 @@ import os
 import time
 import logging
 import socket
+import zoneinfo
 
 import dotenv
 
@@ -105,7 +106,7 @@ def main():
                 ),
             )
 
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(tz=zoneinfo.ZoneInfo("America/New_York"))
         if len(cur_regimen) != 0:
             last_scheduled_time = get_last_scheduled_watering_time(
                 cur_regimen, now.hour, now.minute
