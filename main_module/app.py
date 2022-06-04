@@ -1,16 +1,20 @@
 import os
+import logging
 
 import attr
+import dotenv
+import waitress
+from flask import Flask, render_template, request
 from flask_wtf import FlaskForm
+from flask_wtf.csrf import CSRFProtect
 from wtforms import IntegerField
 from wtforms.validators import DataRequired
-from flask import Flask, request, render_template
-from flask_wtf.csrf import CSRFProtect
+
+dotenv.load_dotenv()
 
 from schedule import Schedule
 
-import dotenv
-dotenv.load_dotenv()
+logger = logging.getLogger("app")
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -35,3 +39,8 @@ def home():
         cur_schedule.dump()
 
     return render_template("home.html", form=form)
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Starting server...")
+    waitress.serve(app, host="0.0.0.0", port="8089")
