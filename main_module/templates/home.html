@@ -1,0 +1,8 @@
+<h1>Watering Schedule</h1>
+<form method="POST" action="/">
+    {{ form.csrf_token }}
+    {{ form.morning.label }} {{ form.morning(size=20) }} <br>
+    {{ form.afternoon.label }} {{ form.afternoon(size=20) }} <br>
+    {{ form.night.label }} {{ form.night(size=20) }} <br>
+    <input type="submit" value="Go">
+</form>

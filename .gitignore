@@ -2,3 +2,6 @@
 notes.txt
 venv/
 configs/
+.env
+__pycache__/
+test.py
