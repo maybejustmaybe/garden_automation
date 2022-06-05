@@ -15,7 +15,7 @@ from schedule import Schedule
 
 logger = logging.getLogger("main")
 
-MORNING = (5, 8)
+MORNING = (6, 9)
 AFTERNOON = (13, 16)
 NIGHT = (19, 22)
 
@@ -114,7 +114,7 @@ def main():
 
             if (
                 last_watered_at_time is None
-                or last_scheduled_time > last_watered_at_time
+                or last_scheduled_time != last_watered_at_time
             ):
                 last_watered_at_time = last_scheduled_time
                 succeeded = water()
