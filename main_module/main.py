@@ -16,7 +16,7 @@ from schedule import Schedule
 logger = logging.getLogger("main")
 
 MORNING = (6, 9)
-AFTERNOON = (13, 16)
+AFTERNOON = (11, 17)
 NIGHT = (19, 22)
 
 
