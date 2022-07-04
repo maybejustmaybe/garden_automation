@@ -2,6 +2,7 @@ import datetime
 import json
 import math
 import os
+from pathlib import Path
 import time
 import logging
 import socket
@@ -79,10 +80,24 @@ def get_last_scheduled_watering_time(regimen, now_hour, now_min):
         cur_hour = cur_time // 60
         cur_min = cur_time % 60
 
-        if (now_hour, now_min) > (cur_hour, cur_min):
+        if (now_hour, now_min) >= (cur_hour, cur_min):
             return (cur_hour, cur_min)
 
     return (regimen[-1] // 60, regimen[-1] % 60)
+
+
+def get_last_watering_time():
+    if not Path(os.environ["LAST_WATERING_PATH"]).exists():
+        return None
+
+    with open(os.environ["LAST_WATERING_PATH"], "r", encoding="utf-8") as f:
+        hour, minute = f.readline().split(",")
+        return (int(hour), int(minute))
+
+
+def update_last_watering_time(t):
+    with open(os.environ["LAST_WATERING_PATH"], "w", encoding="utf-8") as f:
+        f.write(f"{t[0]},{t[1]}\n")
 
 
 def main():
@@ -92,8 +107,6 @@ def main():
 
     cur_schedule = None
     cur_regimen = None
-
-    last_watered_at_time = None
 
     while True:
         try:
@@ -121,12 +134,14 @@ def main():
                 cur_regimen, now.hour, now.minute
             )
 
+            last_watered_at_time = get_last_watering_time()
+
             if (
                 last_watered_at_time is None
                 or last_scheduled_time != last_watered_at_time
             ):
-                last_watered_at_time = last_scheduled_time
                 succeeded = water()
+                update_last_watering_time(last_scheduled_time)
                 if succeeded:
                     logger.info("Watering succeeded.")
                 else:
