@@ -37,7 +37,7 @@ def water():
     else:
         # TODO : don't assume response will fit
         response_raw = conn.recv(1024)
-        response = json.loads(response.decode("utf-8"))
+        response = json.loads(response_raw.decode("utf-8"))
 
         res = response["success"]
         assert isinstance(res, bool), f"Response was not bool: {res}"
