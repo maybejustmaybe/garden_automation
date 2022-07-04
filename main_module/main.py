@@ -35,7 +35,7 @@ def water():
     except OSError:
         return False
     finally:
-        conn.flush()
+        conn.shutdown(socket.SHUT_WR)
 
     try:
         # TODO : don't assume response will fit
