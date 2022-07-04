@@ -35,7 +35,13 @@ def water():
     except OSError:
         return False
     else:
-        return True
+        # TODO : don't assume response will fit
+        response_raw = conn.recv(1024)
+        response = json.loads(response.decode("utf-8"))
+
+        res = response["success"]
+        assert isinstance(res, bool), f"Response was not bool: {res}"
+        return res
     finally:
         conn.close()
 
