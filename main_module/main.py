@@ -34,7 +34,10 @@ def water():
         conn.sendall(b"\n")
     except OSError:
         return False
-    else:
+    finally:
+        conn.flush()
+
+    try:
         # TODO : don't assume response will fit
         response_raw = conn.recv(1024)
         response = json.loads(response_raw.decode("utf-8"))
